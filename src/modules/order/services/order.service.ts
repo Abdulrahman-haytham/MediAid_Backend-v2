@@ -1,0 +1,243 @@
+import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Order, OrderItem, OrderStatus, OrderType } from '../entities/order.entity';
+import { CreateOrderDto } from '../dto/create-order.dto';
+import { UpdateOrderStatusDto, RateOrderDto } from '../dto/update-order.dto';
+import { User, UserRole } from '../../user/user.entity';
+import { Pharmacy } from '../../pharmacy/pharmacy.entity';
+import { Product } from '../../product/product.entity';
+import { Category } from '../../category/category.entity';
+import { Cart, CartItem } from '../../cart/cart.entity';
+import { PharmacyMedicine } from '../../pharmacy/pharmacy.entity';
+
+function simpleSlugify(text: string): string {
+  return text
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/-+/g, '-');
+}
+
+@Injectable()
+export class OrderService {
+  constructor(
+    @InjectRepository(Order) private readonly orderRepo: Repository<Order>,
+    @InjectRepository(OrderItem) private readonly orderItemRepo: Repository<OrderItem>,
+    @InjectRepository(User) private readonly userRepo: Repository<User>,
+    @InjectRepository(Pharmacy) private readonly pharmacyRepo: Repository<Pharmacy>,
+    @InjectRepository(Product) private readonly productRepo: Repository<Product>,
+    @InjectRepository(Category) private readonly categoryRepo: Repository<Category>,
+    @InjectRepository(Cart) private readonly cartRepo: Repository<Cart>,
+    @InjectRepository(CartItem) private readonly cartItemRepo: Repository<CartItem>,
+    @InjectRepository(PharmacyMedicine) private readonly pharmMedRepo: Repository<PharmacyMedicine>,
+  ) {}
+
+  async createOrderFromCart(user: User, dto: CreateOrderDto): Promise<Order> {
+    return this.orderRepo.manager.transaction(async manager => {
+      const { pharmacyName, orderType, deliveryAddress } = dto;
+      if (!pharmacyName || !orderType) {
+        throw new ConflictException('Pharmacy name and order type are required.');
+      }
+      if (orderType === OrderType.DELIVERY && !deliveryAddress) {
+        throw new ConflictException('Delivery address is required for delivery orders.');
+      }
+      const pharmacySlug = simpleSlugify(pharmacyName);
+      const pharmacyRepo = manager.getRepository(Pharmacy);
+      const cartRepo = manager.getRepository(Cart);
+      const cartItemRepo = manager.getRepository(CartItem);
+      const pharmMedRepo = manager.getRepository(PharmacyMedicine);
+      const orderRepo = manager.getRepository(Order);
+      const orderItemRepo = manager.getRepository(OrderItem);
+      const pharmacy = await pharmacyRepo.findOne({ where: { slug: pharmacySlug } });
+      if (!pharmacy) {
+        throw new NotFoundException(`Pharmacy "${pharmacyName}" not found.`);
+      }
+      const cart = await cartRepo.findOne({
+        where: { user: { id: user.id } },
+        relations: ['items', 'items.product', 'items.pharmacy'],
+      });
+      if (!cart || !cart.items || cart.items.length === 0) {
+        throw new ConflictException('Your cart is empty.');
+      }
+      const validPharmacyItems: Array<{
+        cartItemId: string;
+        product: Product;
+        quantity: number;
+        price: number;
+        name: string;
+      }> = [];
+      let totalPrice = 0;
+      for (const cartItem of cart.items) {
+        if (cartItem.pharmacy.id === pharmacy.id) {
+          const stock = await pharmMedRepo.findOne({
+            where: { pharmacy: { id: pharmacy.id }, product: { id: cartItem.product.id } },
+            relations: ['pharmacy', 'product'],
+          });
+          if (stock) {
+            const itemPrice = stock.price || 0;
+            const quantity = cartItem.quantity || 0;
+            const itemTotalPrice = quantity * itemPrice;
+            const itemName = cartItem.product.name || 'Unknown Product';
+            validPharmacyItems.push({
+              cartItemId: cartItem.id,
+              product: cartItem.product,
+              quantity,
+              price: itemPrice,
+              name: itemName,
+            });
+            totalPrice += itemTotalPrice;
+          }
+        }
+      }
+      if (validPharmacyItems.length === 0) {
+        throw new ConflictException(`No valid items from ${pharmacyName} found in your cart to create an order.`);
+      }
+      const order = orderRepo.create({
+        user,
+        pharmacy,
+        orderType,
+        deliveryAddress: orderType === OrderType.DELIVERY ? deliveryAddress : null,
+        status: OrderStatus.PENDING,
+        totalPrice,
+      });
+      const savedOrder = await orderRepo.save(order);
+      for (const item of validPharmacyItems) {
+        const orderItem = orderItemRepo.create({
+          order: savedOrder,
+          product: item.product,
+          quantity: item.quantity,
+          name: item.name,
+        });
+        await orderItemRepo.save(orderItem);
+      }
+      const orderedCartItemIds = new Set(validPharmacyItems.map(i => i.cartItemId));
+      for (const cartItem of cart.items) {
+        if (orderedCartItemIds.has(cartItem.id)) {
+          await cartItemRepo.delete(cartItem.id);
+        }
+      }
+      const finalOrder = await orderRepo.findOne({ where: { id: savedOrder.id }, relations: ['items', 'pharmacy', 'user'] });
+      if (!finalOrder) throw new NotFoundException('Order not found after creation');
+      return finalOrder;
+    });
+  }
+
+  private validateStatusTransition(current: OrderStatus, next: OrderStatus, user: User) {
+    const allowedNext: Record<UserRole, Partial<Record<OrderStatus, OrderStatus[]>>> = {
+      [UserRole.USER]: {
+        [OrderStatus.PENDING]: [OrderStatus.CANCELED],
+      },
+      [UserRole.PHARMACIST]: {
+        [OrderStatus.PENDING]: [OrderStatus.ACCEPTED, OrderStatus.REJECTED, OrderStatus.CANCELED],
+        [OrderStatus.ACCEPTED]: [OrderStatus.PREPARING, OrderStatus.IN_DELIVERY, OrderStatus.CANCELED],
+        [OrderStatus.PREPARING]: [OrderStatus.IN_DELIVERY, OrderStatus.CANCELED],
+        [OrderStatus.IN_DELIVERY]: [OrderStatus.DELIVERED, OrderStatus.CANCELED],
+      },
+      [UserRole.ADMIN]: {
+        [OrderStatus.PENDING]: [
+          OrderStatus.ACCEPTED,
+          OrderStatus.REJECTED,
+          OrderStatus.PREPARING,
+          OrderStatus.IN_DELIVERY,
+          OrderStatus.DELIVERED,
+          OrderStatus.CANCELED,
+        ],
+        [OrderStatus.ACCEPTED]: [OrderStatus.PREPARING, OrderStatus.IN_DELIVERY, OrderStatus.DELIVERED, OrderStatus.CANCELED],
+        [OrderStatus.PREPARING]: [OrderStatus.IN_DELIVERY, OrderStatus.DELIVERED, OrderStatus.CANCELED],
+        [OrderStatus.IN_DELIVERY]: [OrderStatus.DELIVERED, OrderStatus.CANCELED],
+      },
+    };
+    const roleTransitions = allowedNext[user.type as UserRole];
+    if (!roleTransitions) {
+      throw new ForbiddenException('Unauthorized type to update this order');
+    }
+    const allowed = roleTransitions[current] || [];
+    if (!allowed.includes(next)) {
+      if (user.type === UserRole.USER && next !== OrderStatus.CANCELED) {
+        throw new ForbiddenException('Users can only cancel their pending orders');
+      }
+      if (user.type === UserRole.PHARMACIST) {
+        if (next === OrderStatus.ACCEPTED || next === OrderStatus.REJECTED) {
+          throw new ConflictException('Order cannot be accepted or rejected at this stage');
+        }
+        if ([OrderStatus.PREPARING, OrderStatus.IN_DELIVERY, OrderStatus.DELIVERED].includes(next)) {
+          throw new ConflictException('Order must be accepted first before moving to the next stages');
+        }
+        if (next === OrderStatus.CANCELED) {
+          throw new ConflictException('Cannot cancel order at this stage');
+        }
+        throw new ConflictException('Invalid status change by pharmacist');
+      }
+      throw new ConflictException('Invalid status update');
+    }
+  }
+
+  async updateOrderStatus(orderId: string, newStatus: OrderStatus, user: User): Promise<Order> {
+    const order = await this.orderRepo.findOne({ where: { id: orderId }, relations: ['user', 'pharmacy'] });
+    if (!order) throw new NotFoundException('Order not found');
+    const validStatuses: OrderStatus[] = [
+      OrderStatus.ACCEPTED,
+      OrderStatus.REJECTED,
+      OrderStatus.PREPARING,
+      OrderStatus.IN_DELIVERY,
+      OrderStatus.DELIVERED,
+      OrderStatus.CANCELED,
+    ];
+    if (!validStatuses.includes(newStatus)) {
+      throw new ConflictException('Invalid status update');
+    }
+    this.validateStatusTransition(order.status, newStatus, user);
+    order.status = newStatus;
+    await this.orderRepo.save(order);
+    return order;
+  }
+
+  async findOrdersForPharmacy(userId: string) {
+    const pharmacy = await this.pharmacyRepo.findOne({ where: { user: { id: userId } }, relations: ['user'] });
+    if (!pharmacy) throw new ForbiddenException('Unauthorized access');
+    return this.orderRepo.find({
+      where: { pharmacy: { id: pharmacy.id } },
+      relations: ['user', 'items', 'items.product'],
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  async findOrdersForUser(userId: string) {
+    const orders = await this.orderRepo.find({
+      where: { user: { id: userId } },
+      relations: ['pharmacy'],
+      order: { createdAt: 'DESC' },
+    });
+    return orders.map(order => ({
+      orderId: order.id,
+      pharmacyId: order.pharmacy?.id,
+      pharmacyName: order.pharmacy?.name,
+      status: order.status,
+      orderType: order.orderType,
+      createdAt: order.createdAt,
+      totalPrice: order.totalPrice,
+    }));
+  }
+
+  async findOrderDetails(orderId: string) {
+    const order = await this.orderRepo.findOne({
+      where: { id: orderId },
+      relations: ['user', 'items', 'items.product', 'pharmacy'],
+    });
+    return order;
+  }
+
+  async rateExistingOrder(orderId: string, userId: string, dto: RateOrderDto) {
+    const order = await this.orderRepo.findOne({ where: { id: orderId }, relations: ['user', 'pharmacy'] });
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.user.id !== userId) throw new ForbiddenException('Unauthorized to rate this order');
+    if (order.status !== OrderStatus.DELIVERED) throw new ConflictException('You can only rate delivered orders');
+    if (order.ratingScore) throw new ConflictException('Order has already been rated');
+    order.ratingScore = dto.rating;
+    order.ratingComment = dto.comment || null;
+    await this.orderRepo.save(order);
+    return order;
+  }
+}
