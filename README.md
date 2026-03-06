@@ -1,72 +1,108 @@
-# Mid Aid Backend
+# MediAid Backend v2
 
-NestJS backend for Mid Aid services.
+Production-oriented backend for a digital pharmacy and medical ordering platform, built with NestJS and PostgreSQL.
+
+## Project Highlights
+
+- Modular domain-driven architecture (`auth`, `users`, `pharmacies`, `products`, `cart`, `orders`, `emergency-orders`, `chat`, `upload`, `mail`).
+- JWT authentication with role-based authorization (`admin`, `user`, `pharmacist`).
+- Strong request validation with global `ValidationPipe`.
+- Unified API response shape with global interceptor.
+- Global error filter with correlation-id support for traceability.
+- Security hardening with `helmet`, throttling, guarded upload endpoint, and environment-based secrets.
+- Stock-safe ordering flow with transactional updates and DB-level locking.
+
+## Tech Stack
+
+- Framework: NestJS 11
+- Language: TypeScript
+- Database: PostgreSQL + TypeORM
+- Auth: Passport JWT
+- Validation: class-validator / class-transformer
+- Docs: Swagger (OpenAPI)
+- Realtime: Socket.IO (chat module)
+- Infra: Docker + Docker Compose
+
+## Architecture Overview
+
+`src/modules/`
+- `auth`: login and JWT strategy
+- `user`: registration, profile, roles
+- `pharmacy`: pharmacy profile, inventory, rating, discovery
+- `product`: catalog management and favorites
+- `cart`: user cart and item management
+- `order`: order lifecycle and status transitions
+- `emergencyOrder`: emergency smart matching flow
+- `chat`: order-linked messaging
+- `upload`: image/file upload integration
+- `mail`: verification and password reset emails
+
+`src/common/`
+- guards, decorators, interceptors, filters, logger, scheduled jobs
+
+## API Documentation
+
+Run the service and open:
+- `http://localhost:3000/api`
 
 ## Requirements
 
 - Node.js 20+
 - pnpm 9+
-- PostgreSQL
+- PostgreSQL 14+
 
-## Quick Start
+## Local Setup
 
 1. Install dependencies:
-
 ```bash
 pnpm install
 ```
 
-2. Create local environment file:
-
+2. Create environment file:
 ```bash
 cp .env.example .env
 ```
 
-3. Update `.env` values for your machine.
+3. Update `.env` values.
 
-4. Run development server:
-
+4. Run in development:
 ```bash
 pnpm run start:dev
 ```
 
-## Useful Scripts
+## Environment Notes
 
-- `pnpm run build` build the project
-- `pnpm run start:dev` run in watch mode
-- `pnpm run test` run unit tests
-- `pnpm run test:e2e` run e2e tests
-- `pnpm run demo:user` create demo user (requires running server)
-- `pnpm run files:list` generate `project_files.txt` (ignored by git)
+- `.env` is ignored by git.
+- `.env.example` contains placeholders only.
+- `DB_SYNCHRONIZE` should remain `false` outside local experimentation.
+- `JWT_SECRET` must be set; no weak fallback is used.
+
+## Scripts
+
+- `pnpm run start:dev`: development mode
+- `pnpm run build`: build output to `dist`
+- `pnpm run start:prod`: run production build
+- `pnpm run lint`: lint source files
+- `pnpm run test`: unit tests
+- `pnpm run test:e2e`: end-to-end tests
 
 ## Docker
 
-If you want Docker setup, use:
-
+For containerized setup, see:
 - [DOCKER_README.md](./DOCKER_README.md)
 - `Dockerfile`
 - `docker-compose.yml`
 
-## Security Notes
+## Engineering Notes
 
-- Never commit `.env`.
-- Keep production secrets (JWT, SMTP, Cloudinary, DB password) outside git.
-- `.env.example` contains placeholders only.
+- Cart items enforce uniqueness per `(cart, product, pharmacy)`.
+- Order creation runs in a transaction and reduces inventory atomically.
+- Role/resource checks are enforced for order visibility and status updates.
 
-## Push To GitHub
+## GitHub Push
 
 ```bash
 git add .
-git commit -m "chore: prepare backend for github"
-git branch -M main
-git remote add origin https://github.com/<YOUR_USERNAME>/<YOUR_REPO>.git
-git push -u origin main
+git commit -m "chore: update project docs"
+git push
 ```
-
-If `origin` already exists:
-
-```bash
-git remote set-url origin https://github.com/<YOUR_USERNAME>/<YOUR_REPO>.git
-git push -u origin main
-```
-
