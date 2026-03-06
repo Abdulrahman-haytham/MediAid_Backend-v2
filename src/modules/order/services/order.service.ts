@@ -3,11 +3,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Order, OrderItem, OrderStatus, OrderType } from '../entities/order.entity';
 import { CreateOrderDto } from '../dto/create-order.dto';
-import { UpdateOrderStatusDto, RateOrderDto } from '../dto/update-order.dto';
+import { RateOrderDto } from '../dto/update-order.dto';
 import { User, UserRole } from '../../user/user.entity';
 import { Pharmacy } from '../../pharmacy/pharmacy.entity';
 import { Product } from '../../product/product.entity';
-import { Category } from '../../category/category.entity';
 import { Cart, CartItem } from '../../cart/cart.entity';
 import { PharmacyMedicine } from '../../pharmacy/pharmacy.entity';
 
@@ -25,14 +24,33 @@ export class OrderService {
   constructor(
     @InjectRepository(Order) private readonly orderRepo: Repository<Order>,
     @InjectRepository(OrderItem) private readonly orderItemRepo: Repository<OrderItem>,
-    @InjectRepository(User) private readonly userRepo: Repository<User>,
     @InjectRepository(Pharmacy) private readonly pharmacyRepo: Repository<Pharmacy>,
-    @InjectRepository(Product) private readonly productRepo: Repository<Product>,
-    @InjectRepository(Category) private readonly categoryRepo: Repository<Category>,
     @InjectRepository(Cart) private readonly cartRepo: Repository<Cart>,
     @InjectRepository(CartItem) private readonly cartItemRepo: Repository<CartItem>,
-    @InjectRepository(PharmacyMedicine) private readonly pharmMedRepo: Repository<PharmacyMedicine>,
   ) {}
+
+  private async assertCanAccessOrder(order: Order, user: User): Promise<void> {
+    if (user.type === UserRole.ADMIN) {
+      return;
+    }
+    if (user.type === UserRole.USER) {
+      if (order.user.id !== user.id) {
+        throw new ForbiddenException('Unauthorized access to this order');
+      }
+      return;
+    }
+    if (user.type === UserRole.PHARMACIST) {
+      const pharmacy = await this.pharmacyRepo.findOne({
+        where: { user: { id: user.id } },
+        relations: ['user'],
+      });
+      if (!pharmacy || pharmacy.id !== order.pharmacy.id) {
+        throw new ForbiddenException('Unauthorized access to this order');
+      }
+      return;
+    }
+    throw new ForbiddenException('Unauthorized role');
+  }
 
   async createOrderFromCart(user: User, dto: CreateOrderDto): Promise<Order> {
     return this.orderRepo.manager.transaction(async manager => {
@@ -67,17 +85,27 @@ export class OrderService {
         quantity: number;
         price: number;
         name: string;
+        stock: PharmacyMedicine;
       }> = [];
       let totalPrice = 0;
       for (const cartItem of cart.items) {
         if (cartItem.pharmacy.id === pharmacy.id) {
-          const stock = await pharmMedRepo.findOne({
-            where: { pharmacy: { id: pharmacy.id }, product: { id: cartItem.product.id } },
-            relations: ['pharmacy', 'product'],
-          });
+          const stock = await pharmMedRepo
+            .createQueryBuilder('pm')
+            .leftJoinAndSelect('pm.pharmacy', 'pharmacy')
+            .leftJoinAndSelect('pm.product', 'product')
+            .where('pharmacy.id = :pharmacyId', { pharmacyId: pharmacy.id })
+            .andWhere('product.id = :productId', { productId: cartItem.product.id })
+            .setLock('pessimistic_write')
+            .getOne();
           if (stock) {
             const itemPrice = stock.price || 0;
             const quantity = cartItem.quantity || 0;
+            if (quantity <= 0 || stock.quantity < quantity) {
+              throw new ConflictException(
+                `Insufficient stock for ${cartItem.product.name}.`,
+              );
+            }
             const itemTotalPrice = quantity * itemPrice;
             const itemName = cartItem.product.name || 'Unknown Product';
             validPharmacyItems.push({
@@ -86,6 +114,7 @@ export class OrderService {
               quantity,
               price: itemPrice,
               name: itemName,
+              stock,
             });
             totalPrice += itemTotalPrice;
           }
@@ -111,6 +140,8 @@ export class OrderService {
           name: item.name,
         });
         await orderItemRepo.save(orderItem);
+        item.stock.quantity -= item.quantity;
+        await pharmMedRepo.save(item.stock);
       }
       const orderedCartItemIds = new Set(validPharmacyItems.map(i => i.cartItemId));
       for (const cartItem of cart.items) {
@@ -177,6 +208,7 @@ export class OrderService {
   async updateOrderStatus(orderId: string, newStatus: OrderStatus, user: User): Promise<Order> {
     const order = await this.orderRepo.findOne({ where: { id: orderId }, relations: ['user', 'pharmacy'] });
     if (!order) throw new NotFoundException('Order not found');
+    await this.assertCanAccessOrder(order, user);
     const validStatuses: OrderStatus[] = [
       OrderStatus.ACCEPTED,
       OrderStatus.REJECTED,
@@ -221,11 +253,38 @@ export class OrderService {
     }));
   }
 
-  async findOrderDetails(orderId: string) {
+  private async assertCanAccessOrder(order: Order, user: User) {
+    if (user.type === UserRole.ADMIN) return;
+
+    if (user.type === UserRole.USER) {
+      if (order.user.id !== user.id) {
+        throw new ForbiddenException('You can only access your own orders');
+      }
+      return;
+    }
+
+    if (user.type === UserRole.PHARMACIST) {
+      // Find the pharmacy associated with this pharmacist
+      const pharmacy = await this.pharmacyRepo.findOne({ where: { user: { id: user.id } } });
+      
+      if (!pharmacy || order.pharmacy.id !== pharmacy.id) {
+        throw new ForbiddenException('You can only access orders for your pharmacy');
+      }
+      return;
+    }
+    
+    throw new ForbiddenException('Unauthorized access to order');
+  }
+
+  async findOrderDetails(orderId: string, user: User) {
     const order = await this.orderRepo.findOne({
       where: { id: orderId },
       relations: ['user', 'items', 'items.product', 'pharmacy'],
     });
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+    await this.assertCanAccessOrder(order, user);
     return order;
   }
 

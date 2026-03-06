@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -16,6 +17,8 @@ import { MailService } from '../mail/mail.service';
 
 @Injectable()
 export class UserService {
+  private readonly logger = new Logger(UserService.name);
+
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
@@ -59,11 +62,20 @@ export class UserService {
     createUserDto: CreateUserDto,
     secretKey: string,
   ): Promise<User> {
+    this.logger.warn(
+      `Admin creation attempt for email=${createUserDto.email ?? 'unknown'}`,
+    );
+    if (process.env.NODE_ENV === 'production') {
+      throw new ForbiddenException('Admin bootstrap endpoint is disabled in production');
+    }
     if (secretKey !== process.env.SECRET_KEY_ADMIN) {
+      this.logger.warn('Admin creation failed due to invalid secret key');
       throw new ForbiddenException('Invalid Secret Key');
     }
     createUserDto.type = UserRole.ADMIN;
-    return this.register(createUserDto);
+    const admin = await this.register(createUserDto);
+    this.logger.log(`Admin created successfully with id=${admin.id}`);
+    return admin;
   }
 
   // --- Email Verification ---
@@ -102,7 +114,7 @@ export class UserService {
   async update(
     id: string,
     updateUserDto: UpdateUserDto,
-    currentUser: any,
+    currentUser: User,
   ): Promise<User> {
     if (currentUser.id !== id && currentUser.type !== UserRole.ADMIN) {
       throw new ForbiddenException('Unauthorized action');
@@ -126,7 +138,7 @@ export class UserService {
   }
 
   // --- Delete ---
-  async remove(id: string, currentUser: any): Promise<void> {
+  async remove(id: string, currentUser: User): Promise<void> {
     if (currentUser.id !== id && currentUser.type !== UserRole.ADMIN) {
       throw new ForbiddenException('Unauthorized action');
     }

@@ -1,24 +1,26 @@
-import { LoggerService } from '@nestjs/common';
+import { ConsoleLogger, LoggerService } from '@nestjs/common';
 
 export class CustomLogger implements LoggerService {
-  log(message: string) {
-    console.log(`✅ ${message}`);
+  private readonly logger = new ConsoleLogger('MediAid');
+
+  log(message: string, context?: string) {
+    this.logger.log(message, context);
   }
 
-  error(message: string, trace: string) {
-    console.error(`❌ ${message}`);
-    if (trace) console.error(trace);
+  error(message: string, trace?: string, context?: string) {
+    this.logger.error(message, trace, context);
   }
 
-  warn(message: string) {
-    console.warn(`⚠️ ${message}`);
+  warn(message: string, context?: string) {
+    this.logger.warn(message, context);
   }
 
-  debug(message: string) {
-    console.debug(`🐛 ${message}`);
+  debug(message: string, context?: string) {
+    this.logger.debug(message, context);
   }
 
-  verbose(message: string) {
-    console.info(`ℹ️ ${message}`);
+  verbose(message: string, context?: string) {
+    this.logger.verbose(message, context);
   }
 }
+

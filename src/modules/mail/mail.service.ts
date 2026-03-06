@@ -1,9 +1,10 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
 
 @Injectable()
 export class MailService {
+  private readonly logger = new Logger(MailService.name);
   private transporter: nodemailer.Transporter;
 
   constructor(private configService: ConfigService) {
@@ -34,9 +35,12 @@ export class MailService {
           </div>
         `,
       });
-      console.log(`Verification email sent to ${email}`);
+      this.logger.log(`Verification email sent to ${email}`);
     } catch (error) {
-      console.error('Error sending verification email:', error);
+      this.logger.error(
+        'Error sending verification email',
+        error instanceof Error ? error.stack : String(error),
+      );
       // We don't throw here to avoid blocking registration if email fails, 
       // but in production you might want to handle this differently.
     }
@@ -61,9 +65,12 @@ export class MailService {
           </div>
         `,
       });
-      console.log(`Password reset email sent to ${email}`);
+      this.logger.log(`Password reset email sent to ${email}`);
     } catch (error) {
-      console.error('Error sending password reset email:', error);
+      this.logger.error(
+        'Error sending password reset email',
+        error instanceof Error ? error.stack : String(error),
+      );
     }
   }
 }

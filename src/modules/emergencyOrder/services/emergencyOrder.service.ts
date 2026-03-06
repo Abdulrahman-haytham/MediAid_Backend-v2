@@ -28,7 +28,7 @@ export class EmergencyOrderService {
     const { requestedMedicine, deliveryAddress, additionalNotes, priority, responseTimeoutInMinutes } = dto;
     let { latitude, longitude } = dto;
 
-    if (!latitude || !longitude) {
+    if (latitude == null || longitude == null) {
       throw new BadRequestException('Current location (latitude, longitude) is required.');
     }
 

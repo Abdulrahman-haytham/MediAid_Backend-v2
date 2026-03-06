@@ -1,21 +1,31 @@
 import {
-  Controller,
-  Get,
-  Post,
   Body,
-  Patch,
-  Param,
-  Delete,
-  UseInterceptors,
   ClassSerializerInterceptor,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
   UseGuards,
-  Req,
+  UseInterceptors,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagger';
-import { UserService } from './user.service';
+import { Throttle } from '@nestjs/throttler';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { Roles } from '../../common/guards/roles.decorator';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { CreateAdminDto } from '../auth/dto/create-admin.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { User, UserRole } from './user.entity';
+import { UserService } from './user.service';
 
 @ApiTags('Users')
 @UseInterceptors(ClassSerializerInterceptor)
@@ -32,20 +42,27 @@ export class UserController {
     return this.userService.register(createUserDto);
   }
 
-  @ApiOperation({ summary: 'Create a new admin user (Protected with secret key)' })
+  @ApiOperation({ summary: 'Create a new admin user (protected with secret)' })
   @ApiResponse({ status: 201, description: 'Admin created' })
   @ApiResponse({ status: 403, description: 'Invalid secret key' })
+  @Throttle({ default: { limit: 3, ttl: 60000 } })
   @Post('admin')
-  createAdmin(@Body() body: any) {
+  createAdmin(@Body() body: CreateAdminDto) {
     const { secret_key, ...createDto } = body;
-    // نحول الـ body إلى DTO يدوياً أو نعدل الـ request
     return this.userService.createAdmin(createDto as CreateUserDto, secret_key);
   }
 
-  // --- Protected Routes (سيتم تفعيل الحماية لاحقاً) ---
-
   @ApiBearerAuth()
   @UseGuards(AuthGuard('jwt'))
+  @ApiOperation({ summary: 'Get current user profile' })
+  @Get('me')
+  me(@CurrentUser() currentUser: User) {
+    return this.userService.findOne(currentUser.id);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: 'Get all users' })
   @ApiResponse({ status: 200, description: 'Return all users' })
   @Get()
@@ -54,7 +71,8 @@ export class UserController {
   }
 
   @ApiBearerAuth()
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: 'Get user by ID' })
   @ApiResponse({ status: 200, description: 'Return user details' })
   @ApiResponse({ status: 404, description: 'User not found' })
@@ -72,9 +90,8 @@ export class UserController {
   update(
     @Param('id') id: string,
     @Body() updateUserDto: UpdateUserDto,
-    @Req() req: any,
+    @CurrentUser() currentUser: User,
   ) {
-    const currentUser = req.user || { id: id, type: 'user' };
     return this.userService.update(id, updateUserDto, currentUser);
   }
 
@@ -84,8 +101,8 @@ export class UserController {
   @ApiResponse({ status: 200, description: 'User deleted successfully' })
   @ApiResponse({ status: 403, description: 'Forbidden action' })
   @Delete(':id')
-  remove(@Param('id') id: string, @Req() req: any) {
-    const currentUser = req.user || { id: id, type: 'user' };
+  remove(@Param('id') id: string, @CurrentUser() currentUser: User) {
     return this.userService.remove(id, currentUser);
   }
 }
+

@@ -8,13 +8,7 @@ NestJS backend for Mid Aid services.
 - pnpm 9+
 - PostgreSQL
 
-## Project Structure
-
-- `src/` application source code
-- `test/` end-to-end tests
-- `scripts/` helper scripts
-
-## Setup
+## Quick Start
 
 1. Install dependencies:
 
@@ -22,15 +16,15 @@ NestJS backend for Mid Aid services.
 pnpm install
 ```
 
-2. Create environment file:
+2. Create local environment file:
 
 ```bash
 cp .env.example .env
 ```
 
-3. Update `.env` values for your local setup.
+3. Update `.env` values for your machine.
 
-4. Run in development:
+4. Run development server:
 
 ```bash
 pnpm run start:dev
@@ -38,18 +32,32 @@ pnpm run start:dev
 
 ## Useful Scripts
 
-- `pnpm run build` build project
+- `pnpm run build` build the project
 - `pnpm run start:dev` run in watch mode
 - `pnpm run test` run unit tests
 - `pnpm run test:e2e` run e2e tests
 - `pnpm run demo:user` create demo user (requires running server)
-- `pnpm run files:list` list files and generate `project_files.txt`
+- `pnpm run files:list` generate `project_files.txt` (ignored by git)
 
-## Prepare and Push to GitHub
+## Docker
+
+If you want Docker setup, use:
+
+- [DOCKER_README.md](./DOCKER_README.md)
+- `Dockerfile`
+- `docker-compose.yml`
+
+## Security Notes
+
+- Never commit `.env`.
+- Keep production secrets (JWT, SMTP, Cloudinary, DB password) outside git.
+- `.env.example` contains placeholders only.
+
+## Push To GitHub
 
 ```bash
 git add .
-git commit -m "chore: initial project setup"
+git commit -m "chore: prepare backend for github"
 git branch -M main
 git remote add origin https://github.com/<YOUR_USERNAME>/<YOUR_REPO>.git
 git push -u origin main
@@ -61,3 +69,4 @@ If `origin` already exists:
 git remote set-url origin https://github.com/<YOUR_USERNAME>/<YOUR_REPO>.git
 git push -u origin main
 ```
+

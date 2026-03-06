@@ -17,20 +17,20 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
+    const httpException =
+      exception instanceof HttpException ? exception : null;
     
     // Generate Correlation ID if not present
     const correlationId = request.headers['x-correlation-id'] || uuidv4();
     response.setHeader('x-correlation-id', correlationId);
 
-    const status =
-      exception instanceof HttpException
-        ? exception.getStatus()
-        : HttpStatus.INTERNAL_SERVER_ERROR;
+    const status = httpException
+      ? httpException.getStatus()
+      : HttpStatus.INTERNAL_SERVER_ERROR;
 
-    const message =
-      exception instanceof HttpException
-        ? exception.getResponse()
-        : 'Internal server error';
+    const message = httpException
+      ? httpException.getResponse()
+      : 'Internal server error';
 
     // Log the error with structured context
     this.logger.error(

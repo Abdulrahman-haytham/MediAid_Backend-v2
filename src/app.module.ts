@@ -42,6 +42,7 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
         SMTP_PORT: Joi.number().default(587),
         SMTP_USER: Joi.string().required(),
         SMTP_PASS: Joi.string().required(),
+        DB_SYNCHRONIZE: Joi.boolean().default(false),
       }),
     }),
     ThrottlerModule.forRoot([{
@@ -59,7 +60,7 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
         password: configService.get<string>('DB_PASS'),
         database: configService.get<string>('DB_NAME'),
         autoLoadEntities: true,
-        synchronize: true, // ⚠️ Set to false in production
+        synchronize: configService.get<boolean>('DB_SYNCHRONIZE') === true,
       }),
     }),
     UserModule,

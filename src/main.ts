@@ -1,29 +1,29 @@
-import { NestFactory } from '@nestjs/core';
+import {
+  ClassSerializerInterceptor,
+  ValidationPipe,
+} from '@nestjs/common';
+import { NestFactory, Reflector } from '@nestjs/core';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import compression from 'compression';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { CustomLogger } from './common/logger/custom-logger';
-import { ValidationPipe, ClassSerializerInterceptor } from '@nestjs/common';
-import { Reflector } from '@nestjs/core';
-import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
-import helmet from 'helmet';
-import compression from 'compression';
-
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 
 async function bootstrap() {
+  const appLogger = new CustomLogger();
   const app = await NestFactory.create(AppModule, {
-    logger: new CustomLogger(),
+    logger: appLogger,
   });
 
-  // Security Headers
   app.use(helmet());
-  
-  // Compression
   app.use(compression());
 
-  // Swagger Configuration
   const config = new DocumentBuilder()
     .setTitle('MediAid API')
-    .setDescription('API documentation for MediAid application. \n\n**Response Structure:**\nAll successful responses follow this format:\n```json\n{\n  "statusCode": 200,\n  "success": true,\n  "message": "Request successful",\n  "data": { ... }\n}\n```')
+    .setDescription(
+      'API documentation for MediAid application.\n\nSuccessful responses use a unified structure.',
+    )
     .setVersion('1.0')
     .addBearerAuth()
     .build();
@@ -44,7 +44,8 @@ async function bootstrap() {
 
   const port = process.env.PORT || 3000;
   await app.listen(port);
-
-  console.log(`🚀 API جاهزة على: http://localhost:${port}`);
+  appLogger.log(`API ready at: http://localhost:${port}`, 'Bootstrap');
 }
+
 bootstrap();
+

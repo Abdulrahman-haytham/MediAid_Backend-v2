@@ -7,6 +7,7 @@ import {
   ManyToOne,
   OneToMany,
   JoinColumn,
+  Index,
 } from 'typeorm';
 import { User } from '../user/user.entity';
 import { Product } from '../product/product.entity';
@@ -30,6 +31,9 @@ export class Cart {
   createdAt: Date;
 }
 
+@Index('uq_cart_items_cart_product_pharmacy', ['cart', 'product', 'pharmacy'], {
+  unique: true,
+})
 @Entity('cart_items')
 export class CartItem {
   @PrimaryGeneratedColumn('uuid')
