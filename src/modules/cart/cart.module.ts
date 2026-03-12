@@ -8,7 +8,16 @@ import { CartService } from './cart.service';
 import { CartController } from './cart.controller';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Cart, CartItem, Product, Pharmacy, PharmacyMedicine, User])],
+  imports: [
+    TypeOrmModule.forFeature([
+      Cart,
+      CartItem,
+      Product,
+      Pharmacy,
+      PharmacyMedicine,
+      User,
+    ]),
+  ],
   controllers: [CartController],
   providers: [CartService],
   exports: [CartService],

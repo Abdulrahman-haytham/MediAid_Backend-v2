@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddCartItemUniqueConstraint1760000000000
-  implements MigrationInterface
-{
+export class AddCartItemUniqueConstraint1760000000000 implements MigrationInterface {
   name = 'AddCartItemUniqueConstraint1760000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
@@ -17,4 +15,3 @@ export class AddCartItemUniqueConstraint1760000000000
     );
   }
 }
-

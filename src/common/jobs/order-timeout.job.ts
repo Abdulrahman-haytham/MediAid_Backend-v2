@@ -1,11 +1,16 @@
-import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  OnModuleDestroy,
+} from '@nestjs/common';
 import { EmergencyOrderService } from '../../modules/emergencyOrder/services/emergencyOrder.service';
 
 @Injectable()
 export class OrderTimeoutJob implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(OrderTimeoutJob.name);
   private timer: NodeJS.Timeout | null = null;
-  
+
   constructor(private readonly emergencyOrderService: EmergencyOrderService) {}
 
   onModuleInit() {
@@ -14,7 +19,9 @@ export class OrderTimeoutJob implements OnModuleInit, OnModuleDestroy {
       try {
         await this.emergencyOrderService.processOrderTimeouts();
       } catch (err: any) {
-        this.logger.error(`Error during scheduled order timeout check: ${err?.message}`);
+        this.logger.error(
+          `Error during scheduled order timeout check: ${err?.message}`,
+        );
       }
     }, 60_000);
   }

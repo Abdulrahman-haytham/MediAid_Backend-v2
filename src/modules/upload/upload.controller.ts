@@ -1,4 +1,11 @@
-import { Controller, Post, UploadedFile, UseInterceptors, BadRequestException, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  UploadedFile,
+  UseInterceptors,
+  BadRequestException,
+  UseGuards,
+} from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { UploadService } from './upload.service';
@@ -40,9 +47,9 @@ export class UploadController {
     if (!file) {
       throw new BadRequestException('No file uploaded');
     }
-    
+
     const data = await this.uploadService.uploadFile(file);
-    
+
     return {
       message: 'Upload successful',
       data,

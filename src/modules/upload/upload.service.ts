@@ -4,11 +4,13 @@ import { Readable } from 'stream';
 
 @Injectable()
 export class UploadService {
-  async uploadFile(file: Express.Multer.File): Promise<{ url: string; cloudinary_id: string }> {
+  async uploadFile(
+    file: Express.Multer.File,
+  ): Promise<{ url: string; cloudinary_id: string }> {
     if (!file) {
-        throw new BadRequestException('No file uploaded');
+      throw new BadRequestException('No file uploaded');
     }
-    
+
     return new Promise((resolve, reject) => {
       const upload = cloudinary.uploader.upload_stream(
         {

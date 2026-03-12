@@ -1,7 +1,4 @@
-import {
-  ClassSerializerInterceptor,
-  ValidationPipe,
-} from '@nestjs/common';
+import { ClassSerializerInterceptor, ValidationPipe } from '@nestjs/common';
 import { NestFactory, Reflector } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import compression from 'compression';
@@ -48,4 +45,3 @@ async function bootstrap() {
 }
 
 bootstrap();
-

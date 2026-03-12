@@ -1,4 +1,12 @@
-import { IsInt, IsNotEmpty, IsNumber, IsString, Min, IsOptional, IsDateString } from 'class-validator';
+import {
+  IsInt,
+  IsNotEmpty,
+  IsNumber,
+  IsString,
+  Min,
+  IsOptional,
+  IsDateString,
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class AddProductDto {
@@ -17,12 +25,20 @@ export class AddProductDto {
   @Min(0)
   price: number;
 
-  @ApiProperty({ example: '2025-12-31T00:00:00Z', description: 'Expiry Date', required: false })
+  @ApiProperty({
+    example: '2025-12-31T00:00:00Z',
+    description: 'Expiry Date',
+    required: false,
+  })
   @IsOptional()
   @IsDateString()
   expiryDate?: string;
 
-  @ApiProperty({ example: 'BATCH123', description: 'Batch Number', required: false })
+  @ApiProperty({
+    example: 'BATCH123',
+    description: 'Batch Number',
+    required: false,
+  })
   @IsOptional()
   @IsString()
   batchNumber?: string;

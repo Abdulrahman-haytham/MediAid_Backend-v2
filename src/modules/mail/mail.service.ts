@@ -41,7 +41,7 @@ export class MailService {
         'Error sending verification email',
         error instanceof Error ? error.stack : String(error),
       );
-      // We don't throw here to avoid blocking registration if email fails, 
+      // We don't throw here to avoid blocking registration if email fails,
       // but in production you might want to handle this differently.
     }
   }

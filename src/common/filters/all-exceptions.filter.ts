@@ -17,9 +17,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
-    const httpException =
-      exception instanceof HttpException ? exception : null;
-    
+    const httpException = exception instanceof HttpException ? exception : null;
+
     // Generate Correlation ID if not present
     const correlationId = request.headers['x-correlation-id'] || uuidv4();
     response.setHeader('x-correlation-id', correlationId);
@@ -44,7 +43,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
       timestamp: new Date().toISOString(),
       path: request.url,
       correlationId: correlationId,
-      message: status === HttpStatus.INTERNAL_SERVER_ERROR ? 'Internal server error' : message,
+      message:
+        status === HttpStatus.INTERNAL_SERVER_ERROR
+          ? 'Internal server error'
+          : message,
     };
 
     response.status(status).json(responseBody);

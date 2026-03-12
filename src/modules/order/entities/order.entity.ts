@@ -1,4 +1,13 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, OneToMany, Index } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  ManyToOne,
+  OneToMany,
+  Index,
+} from 'typeorm';
 import { User } from '../../user/user.entity';
 import { Pharmacy } from '../../pharmacy/pharmacy.entity';
 import { Product } from '../../product/product.entity';
@@ -33,7 +42,10 @@ export class Order {
   @ManyToOne(() => Pharmacy, { nullable: false })
   pharmacy: Pharmacy;
 
-  @OneToMany(() => OrderItem, item => item.order, { cascade: true, eager: true })
+  @OneToMany(() => OrderItem, (item) => item.order, {
+    cascade: true,
+    eager: true,
+  })
   items: OrderItem[];
 
   @Column({ type: 'enum', enum: OrderType })
@@ -66,7 +78,10 @@ export class OrderItem {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @ManyToOne(() => Order, order => order.items, { nullable: false, onDelete: 'CASCADE' })
+  @ManyToOne(() => Order, (order) => order.items, {
+    nullable: false,
+    onDelete: 'CASCADE',
+  })
   order: Order;
 
   @ManyToOne(() => Product, { nullable: false })

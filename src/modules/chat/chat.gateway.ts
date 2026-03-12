@@ -39,7 +39,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         secret: process.env.JWT_SECRET,
       });
       client.data.user = payload;
-      
+
       // Join a room based on user ID to receive personal notifications
       client.join(`user_${payload.sub}`);
       console.log(`Client connected: ${client.id}, User: ${payload.sub}`);
@@ -64,13 +64,15 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     const message = await this.chatService.create(user.sub, createMessageDto);
-    
+
     // Notify the recipient (Pharmacy or User)
     // Assuming the order links a user and a pharmacy
     // We can emit to a room specific to the order: `order_${orderId}`
-    
-    this.server.to(`order_${createMessageDto.orderId}`).emit('newMessage', message);
-    
+
+    this.server
+      .to(`order_${createMessageDto.orderId}`)
+      .emit('newMessage', message);
+
     return message;
   }
 

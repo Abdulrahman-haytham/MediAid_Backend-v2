@@ -1,4 +1,9 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, ILike, LessThan } from 'typeorm';
 import { Pharmacy, PharmacyMedicine, PharmacyReview } from './pharmacy.entity';
@@ -11,14 +16,22 @@ import { User, UserRole } from '../user/user.entity';
 import { Product, ProductType } from '../product/product.entity';
 import { Category } from '../category/category.entity';
 
-function distanceInMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
+function distanceInMeters(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number,
+): number {
   const toRad = (v: number) => (v * Math.PI) / 180;
   const R = 6371000;
   const dLat = toRad(lat2 - lat1);
   const dLon = toRad(lon2 - lon1);
   const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    Math.cos(toRad(lat1)) *
+      Math.cos(toRad(lat2)) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 }
@@ -26,19 +39,29 @@ function distanceInMeters(lat1: number, lon1: number, lat2: number, lon2: number
 @Injectable()
 export class PharmacyService {
   constructor(
-    @InjectRepository(Pharmacy) private readonly pharmacyRepo: Repository<Pharmacy>,
-    @InjectRepository(PharmacyMedicine) private readonly pharmMedRepo: Repository<PharmacyMedicine>,
-    @InjectRepository(PharmacyReview) private readonly reviewRepo: Repository<PharmacyReview>,
-    @InjectRepository(Product) private readonly productRepo: Repository<Product>,
+    @InjectRepository(Pharmacy)
+    private readonly pharmacyRepo: Repository<Pharmacy>,
+    @InjectRepository(PharmacyMedicine)
+    private readonly pharmMedRepo: Repository<PharmacyMedicine>,
+    @InjectRepository(PharmacyReview)
+    private readonly reviewRepo: Repository<PharmacyReview>,
+    @InjectRepository(Product)
+    private readonly productRepo: Repository<Product>,
     @InjectRepository(User) private readonly userRepo: Repository<User>,
-    @InjectRepository(Category) private readonly categoryRepo: Repository<Category>,
+    @InjectRepository(Category)
+    private readonly categoryRepo: Repository<Category>,
   ) {}
 
   async create(user: User, dto: CreatePharmacyDto): Promise<Pharmacy> {
     if (!user) throw new ForbiddenException('Authentication required');
-    if (user.type !== UserRole.PHARMACIST) throw new ForbiddenException('Only pharmacists can create pharmacies');
-    const exists = await this.pharmacyRepo.findOne({ where: { user: { id: user.id } }, relations: ['user'] });
-    if (exists) throw new ConflictException('Pharmacy already exists for this user');
+    if (user.type !== UserRole.PHARMACIST)
+      throw new ForbiddenException('Only pharmacists can create pharmacies');
+    const exists = await this.pharmacyRepo.findOne({
+      where: { user: { id: user.id } },
+      relations: ['user'],
+    });
+    if (exists)
+      throw new ConflictException('Pharmacy already exists for this user');
     const pharmacy = this.pharmacyRepo.create({
       user,
       name: dto.name,
@@ -66,18 +89,26 @@ export class PharmacyService {
 
   async updateByUser(user: User, dto: UpdatePharmacyDto): Promise<Pharmacy> {
     if (!user) throw new ForbiddenException('Authentication required');
-    const pharmacy = await this.pharmacyRepo.findOne({ where: { user: { id: user.id } }, relations: ['user'] });
-    if (!pharmacy) throw new NotFoundException('Pharmacy not found or unauthorized');
+    const pharmacy = await this.pharmacyRepo.findOne({
+      where: { user: { id: user.id } },
+      relations: ['user'],
+    });
+    if (!pharmacy)
+      throw new NotFoundException('Pharmacy not found or unauthorized');
     if (dto.location) {
       pharmacy.latitude = dto.location.latitude;
       pharmacy.longitude = dto.location.longitude;
       delete (dto as any).location;
     }
     if (dto.openingHours) {
-      pharmacy.openingMorningFrom = dto.openingHours.morningFrom ?? pharmacy.openingMorningFrom;
-      pharmacy.openingMorningTo = dto.openingHours.morningTo ?? pharmacy.openingMorningTo;
-      pharmacy.openingEveningFrom = dto.openingHours.eveningFrom ?? pharmacy.openingEveningFrom;
-      pharmacy.openingEveningTo = dto.openingHours.eveningTo ?? pharmacy.openingEveningTo;
+      pharmacy.openingMorningFrom =
+        dto.openingHours.morningFrom ?? pharmacy.openingMorningFrom;
+      pharmacy.openingMorningTo =
+        dto.openingHours.morningTo ?? pharmacy.openingMorningTo;
+      pharmacy.openingEveningFrom =
+        dto.openingHours.eveningFrom ?? pharmacy.openingEveningFrom;
+      pharmacy.openingEveningTo =
+        dto.openingHours.eveningTo ?? pharmacy.openingEveningTo;
       delete (dto as any).openingHours;
     }
     Object.assign(pharmacy, dto);
@@ -86,7 +117,7 @@ export class PharmacyService {
 
   async findAllActive() {
     const items = await this.pharmacyRepo.find({ where: { isActive: true } });
-    return items.map(ph => ({
+    return items.map((ph) => ({
       id: ph.id,
       name: ph.name,
       address: ph.address,
@@ -116,8 +147,12 @@ export class PharmacyService {
   }
 
   async findMine(user: User) {
-    const pharmacy = await this.pharmacyRepo.findOne({ where: { user: { id: user.id } }, relations: ['user'] });
-    if (!pharmacy) throw new NotFoundException('لم يتم العثور على صيدلية لهذا المستخدم');
+    const pharmacy = await this.pharmacyRepo.findOne({
+      where: { user: { id: user.id } },
+      relations: ['user'],
+    });
+    if (!pharmacy)
+      throw new NotFoundException('لم يتم العثور على صيدلية لهذا المستخدم');
     const reviews = await this.reviewRepo.find({
       where: { pharmacy: { id: pharmacy.id } },
       relations: ['user'],
@@ -148,11 +183,18 @@ export class PharmacyService {
         workingDays: pharmacy.workingDays,
         imageUrl: pharmacy.imageUrl,
         description: pharmacy.description,
-        location: { longitude: pharmacy.longitude, latitude: pharmacy.latitude },
+        location: {
+          longitude: pharmacy.longitude,
+          latitude: pharmacy.latitude,
+        },
         services: pharmacy.services,
-        socialMedia: { facebook: pharmacy.facebook, instagram: pharmacy.instagram, twitter: pharmacy.twitter },
+        socialMedia: {
+          facebook: pharmacy.facebook,
+          instagram: pharmacy.instagram,
+          twitter: pharmacy.twitter,
+        },
         website: pharmacy.website,
-        reviews: reviews.map(r => ({ userId: r.user.id, rating: r.rating })),
+        reviews: reviews.map((r) => ({ userId: r.user.id, rating: r.rating })),
         reviewCount,
         averageRating: pharmacy.averageRating,
         ratingLabel,
@@ -164,9 +206,16 @@ export class PharmacyService {
   }
 
   async checkUserPharmacy(userId: string) {
-    const pharmacy = await this.pharmacyRepo.findOne({ where: { user: { id: userId } }, relations: ['user'] });
+    const pharmacy = await this.pharmacyRepo.findOne({
+      where: { user: { id: userId } },
+      relations: ['user'],
+    });
     if (pharmacy) {
-      return { hasPharmacy: true, pharmacyId: pharmacy.id, pharmacyName: pharmacy.name };
+      return {
+        hasPharmacy: true,
+        pharmacyId: pharmacy.id,
+        pharmacyName: pharmacy.name,
+      };
     }
     return { hasPharmacy: false };
   }
@@ -175,24 +224,37 @@ export class PharmacyService {
     if (dto.rating < 0 || dto.rating > 5) {
       throw new ConflictException('Rating must be between 0 and 5');
     }
-    const pharmacy = await this.pharmacyRepo.findOne({ where: { id: pharmacyId } });
+    const pharmacy = await this.pharmacyRepo.findOne({
+      where: { id: pharmacyId },
+    });
     if (!pharmacy) throw new NotFoundException('Pharmacy not found');
     const existing = await this.reviewRepo.findOne({
       where: { pharmacy: { id: pharmacyId }, user: { id: user.id } },
       relations: ['pharmacy', 'user'],
     });
-    if (existing) throw new ConflictException('You have already rated this pharmacy');
-    const review = this.reviewRepo.create({ pharmacy, user, rating: dto.rating });
+    if (existing)
+      throw new ConflictException('You have already rated this pharmacy');
+    const review = this.reviewRepo.create({
+      pharmacy,
+      user,
+      rating: dto.rating,
+    });
     await this.reviewRepo.save(review);
-    const all = await this.reviewRepo.find({ where: { pharmacy: { id: pharmacyId } } });
-    const avg = all.length ? all.reduce((a, b) => a + b.rating, 0) / all.length : 0;
+    const all = await this.reviewRepo.find({
+      where: { pharmacy: { id: pharmacyId } },
+    });
+    const avg = all.length
+      ? all.reduce((a, b) => a + b.rating, 0) / all.length
+      : 0;
     pharmacy.averageRating = avg;
     await this.pharmacyRepo.save(pharmacy);
     return { averageRating: pharmacy.averageRating };
   }
 
   async getPharmacyDetails(pharmacyId: string) {
-    const pharmacy = await this.pharmacyRepo.findOne({ where: { id: pharmacyId } });
+    const pharmacy = await this.pharmacyRepo.findOne({
+      where: { id: pharmacyId },
+    });
     if (!pharmacy) throw new NotFoundException('Pharmacy not found');
     return {
       id: pharmacy.id,
@@ -212,7 +274,11 @@ export class PharmacyService {
       workingDays: pharmacy.workingDays,
       description: pharmacy.description,
       services: pharmacy.services,
-      socialMedia: { facebook: pharmacy.facebook, instagram: pharmacy.instagram, twitter: pharmacy.twitter },
+      socialMedia: {
+        facebook: pharmacy.facebook,
+        instagram: pharmacy.instagram,
+        twitter: pharmacy.twitter,
+      },
       website: pharmacy.website,
       averageRating: pharmacy.averageRating,
       isActive: pharmacy.isActive,
@@ -221,12 +287,20 @@ export class PharmacyService {
   }
 
   async addProductToStock(user: User, dto: AddProductDto) {
-    const product = await this.productRepo.findOne({ where: { id: dto.productId } });
+    const product = await this.productRepo.findOne({
+      where: { id: dto.productId },
+    });
     if (!product) throw new NotFoundException('Product not found');
-    const pharmacy = await this.pharmacyRepo.findOne({ where: { user: { id: user.id } }, relations: ['user'] });
+    const pharmacy = await this.pharmacyRepo.findOne({
+      where: { user: { id: user.id } },
+      relations: ['user'],
+    });
     if (!pharmacy) throw new NotFoundException('Pharmacy not found');
 
-    const where: any = { pharmacy: { id: pharmacy.id }, product: { id: product.id } };
+    const where: any = {
+      pharmacy: { id: pharmacy.id },
+      product: { id: product.id },
+    };
     if (dto.batchNumber) {
       where.batchNumber = dto.batchNumber;
     }
@@ -260,7 +334,7 @@ export class PharmacyService {
     });
     return {
       pharmacyId,
-      medicines: items.map(m => ({
+      medicines: items.map((m) => ({
         medicineId: m.product.id,
         name: m.product.name,
         imageUrl: m.product.imageUrl,
@@ -279,8 +353,8 @@ export class PharmacyService {
       relations: ['product'],
     });
     const matched = items
-      .filter(i => i.product.name.toLowerCase().includes(name.toLowerCase()))
-      .map(m => ({
+      .filter((i) => i.product.name.toLowerCase().includes(name.toLowerCase()))
+      .map((m) => ({
         id: m.product.id,
         name: m.product.name,
         imageUrl: m.product.imageUrl,
@@ -290,7 +364,9 @@ export class PharmacyService {
   }
 
   async getExpiringMedicines(user: User) {
-    const pharmacy = await this.pharmacyRepo.findOne({ where: { user: { id: user.id } } });
+    const pharmacy = await this.pharmacyRepo.findOne({
+      where: { user: { id: user.id } },
+    });
     if (!pharmacy) throw new NotFoundException('Pharmacy not found');
 
     const threeMonthsFromNow = new Date();
@@ -304,7 +380,7 @@ export class PharmacyService {
       relations: ['product'],
     });
 
-    return items.map(m => ({
+    return items.map((m) => ({
       id: m.id,
       productName: m.product.name,
       expiryDate: m.expiryDate,
@@ -314,7 +390,9 @@ export class PharmacyService {
   }
 
   async getLowStockMedicines(user: User, threshold: number = 10) {
-    const pharmacy = await this.pharmacyRepo.findOne({ where: { user: { id: user.id } } });
+    const pharmacy = await this.pharmacyRepo.findOne({
+      where: { user: { id: user.id } },
+    });
     if (!pharmacy) throw new NotFoundException('Pharmacy not found');
 
     const items = await this.pharmMedRepo.find({
@@ -325,7 +403,7 @@ export class PharmacyService {
       relations: ['product'],
     });
 
-    return items.map(m => ({
+    return items.map((m) => ({
       id: m.id,
       productName: m.product.name,
       quantity: m.quantity,
@@ -333,20 +411,40 @@ export class PharmacyService {
     }));
   }
 
-  async findNearbyPharmacies(longitude: number, latitude: number, maxDistance = 5000) {
-    const all = await this.pharmacyRepo.find({ select: ['id', 'name', 'latitude', 'longitude'] });
+  async findNearbyPharmacies(
+    longitude: number,
+    latitude: number,
+    maxDistance = 5000,
+  ) {
+    const all = await this.pharmacyRepo.find({
+      select: ['id', 'name', 'latitude', 'longitude'],
+    });
     const nearby = all
-      .map(p => ({ ...p, distance: distanceInMeters(latitude, longitude, p.latitude, p.longitude) }))
-      .filter(p => p.distance <= maxDistance)
+      .map((p) => ({
+        ...p,
+        distance: distanceInMeters(
+          latitude,
+          longitude,
+          p.latitude,
+          p.longitude,
+        ),
+      }))
+      .filter((p) => p.distance <= maxDistance)
       .sort((a, b) => a.distance - b.distance)
-      .map(p => ({ name: p.name, location: { latitude: p.latitude, longitude: p.longitude }, id: p.id }));
+      .map((p) => ({
+        name: p.name,
+        location: { latitude: p.latitude, longitude: p.longitude },
+        id: p.id,
+      }));
     return nearby;
   }
 
   async createProductAndAdd(user: User, dto: CreateProductForPharmacyDto) {
     const currentUser = await this.userRepo.findOne({ where: { id: user.id } });
     if (!currentUser) throw new NotFoundException('User not found');
-    const category = await this.categoryRepo.findOne({ where: [{ name: dto.categoryName }, { slug: dto.categoryName }] });
+    const category = await this.categoryRepo.findOne({
+      where: [{ name: dto.categoryName }, { slug: dto.categoryName }],
+    });
     if (!category) throw new NotFoundException('Category not found');
     const newProduct = this.productRepo.create({
       name: dto.name,
@@ -362,24 +460,42 @@ export class PharmacyService {
       isAdminCreated: currentUser.type === UserRole.ADMIN,
     });
     await this.productRepo.save(newProduct);
-    const pharmacy = await this.pharmacyRepo.findOne({ where: { user: { id: user.id } }, relations: ['user'] });
+    const pharmacy = await this.pharmacyRepo.findOne({
+      where: { user: { id: user.id } },
+      relations: ['user'],
+    });
     if (!pharmacy) {
       const created = await this.create(currentUser, {
         name: 'My Pharmacy',
         address: 'Unknown',
         location: { latitude: 0, longitude: 0 },
         phone: '+000000000',
-        openingHours: { morningFrom: '08:00', morningTo: '12:00', eveningFrom: '13:00', eveningTo: '17:00' },
+        openingHours: {
+          morningFrom: '08:00',
+          morningTo: '12:00',
+          eveningFrom: '13:00',
+          eveningTo: '17:00',
+        },
         imageUrl: 'https://placehold.co/600x400',
         workingDays: ['Sunday', 'Monday'],
       } as any);
       await this.pharmMedRepo.save(
-        this.pharmMedRepo.create({ pharmacy: created, product: newProduct, quantity: 1, price: dto.price }),
+        this.pharmMedRepo.create({
+          pharmacy: created,
+          product: newProduct,
+          quantity: 1,
+          price: dto.price,
+        }),
       );
       return { product: newProduct, pharmacy: created };
     } else {
       await this.pharmMedRepo.save(
-        this.pharmMedRepo.create({ pharmacy, product: newProduct, quantity: 1, price: dto.price }),
+        this.pharmMedRepo.create({
+          pharmacy,
+          product: newProduct,
+          quantity: 1,
+          price: dto.price,
+        }),
       );
       return { product: newProduct, pharmacy };
     }

@@ -40,7 +40,7 @@ export class EmergencyOrder {
   @Column({ type: 'text', nullable: true })
   additionalNotes: string;
 
-  // Storing location as GeoJSON or simple lat/lng. 
+  // Storing location as GeoJSON or simple lat/lng.
   // Given Pharmacy uses lat/lng columns, let's stick to consistency or use JSON if we want full Point structure.
   // Legacy used { type: 'Point', coordinates: [lng, lat] }.
   // Let's use simple lat/lng for easier querying with Pharmacy entity which uses lat/lng.
@@ -64,7 +64,10 @@ export class EmergencyOrder {
   @JoinTable()
   targettedPharmacies: Pharmacy[];
 
-  @OneToMany(() => EmergencyOrderResponse, response => response.order, { cascade: true, eager: true })
+  @OneToMany(() => EmergencyOrderResponse, (response) => response.order, {
+    cascade: true,
+    eager: true,
+  })
   responses: EmergencyOrderResponse[];
 
   @ManyToOne(() => Pharmacy, { nullable: true })
@@ -97,7 +100,9 @@ export class EmergencyOrderResponse {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @ManyToOne(() => EmergencyOrder, order => order.responses, { onDelete: 'CASCADE' })
+  @ManyToOne(() => EmergencyOrder, (order) => order.responses, {
+    onDelete: 'CASCADE',
+  })
   order: EmergencyOrder;
 
   @ManyToOne(() => Pharmacy, { nullable: false, eager: true })

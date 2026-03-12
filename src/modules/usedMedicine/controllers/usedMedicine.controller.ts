@@ -1,4 +1,14 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Put,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { UsedMedicineService } from '../services/usedMedicine.service';
@@ -36,7 +46,11 @@ export class UsedMedicineController {
   @UseGuards(AuthGuard('jwt'))
   @ApiOperation({ summary: 'Update used medicine details' })
   @Put(':id')
-  async update(@Req() req: any, @Param('id') id: string, @Body() dto: UpdateUsedMedicineDto) {
+  async update(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: UpdateUsedMedicineDto,
+  ) {
     const medicine = await this.usedService.updateDetails(req.user, id, dto);
     return { message: 'Medicine updated successfully', medicine };
   }

@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, Post, Put, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Put,
+  UseGuards,
+} from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { EmergencyOrderService } from '../services/emergencyOrder.service';
@@ -18,11 +26,15 @@ export class EmergencyOrderController {
   @UseGuards(AuthGuard('jwt'))
   @ApiOperation({ summary: 'Create emergency order' })
   @Post()
-  async create(@CurrentUser() user: User, @Body() dto: CreateEmergencyOrderDto) {
+  async create(
+    @CurrentUser() user: User,
+    @Body() dto: CreateEmergencyOrderDto,
+  ) {
     const order = await this.emergencyOrderService.createSmartOrder(user, dto);
     return {
-        message: 'Emergency order created and sent to the best-matching pharmacies.',
-        order
+      message:
+        'Emergency order created and sent to the best-matching pharmacies.',
+      order,
     };
   }
 
@@ -33,7 +45,7 @@ export class EmergencyOrderController {
   async getUserOrders(@CurrentUser() user: User) {
     return await this.emergencyOrderService.findUserOrders(user);
   }
-  
+
   @ApiBearerAuth()
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('pharmacist')
@@ -56,8 +68,16 @@ export class EmergencyOrderController {
   @Roles('pharmacist')
   @ApiOperation({ summary: 'Respond to emergency order (Pharmacist)' })
   @Put(':id/respond')
-  async respond(@CurrentUser() user: User, @Param('id') id: string, @Body() dto: RespondToEmergencyOrderDto) {
-    const order = await this.emergencyOrderService.respondToOrder(user, id, dto);
+  async respond(
+    @CurrentUser() user: User,
+    @Param('id') id: string,
+    @Body() dto: RespondToEmergencyOrderDto,
+  ) {
+    const order = await this.emergencyOrderService.respondToOrder(
+      user,
+      id,
+      dto,
+    );
     return { message: 'Response recorded successfully.', order };
   }
 

@@ -1,6 +1,22 @@
-import { Body, Controller, Get, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Put,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiResponse } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiBearerAuth,
+  ApiQuery,
+  ApiResponse,
+} from '@nestjs/swagger';
 import { Roles } from '../../common/guards/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { UserRole } from '../user/user.entity';
@@ -38,7 +54,10 @@ export class PharmacyController {
   @ApiQuery({ name: 'threshold', required: false, type: Number })
   @Get('me/low-stock')
   async getLowStock(@Req() req: any, @Query('threshold') threshold?: number) {
-    return this.pharmacyService.getLowStockMedicines(req.user, threshold ? Number(threshold) : 10);
+    return this.pharmacyService.getLowStockMedicines(
+      req.user,
+      threshold ? Number(threshold) : 10,
+    );
   }
 
   @ApiBearerAuth()
@@ -121,7 +140,11 @@ export class PharmacyController {
   @UseGuards(AuthGuard('jwt'))
   @ApiOperation({ summary: 'Rate a pharmacy' })
   @Post(':id/rate')
-  async rate(@Param('id') id: string, @Req() req: any, @Body() dto: RatePharmacyDto) {
+  async rate(
+    @Param('id') id: string,
+    @Req() req: any,
+    @Body() dto: RatePharmacyDto,
+  ) {
     return this.pharmacyService.ratePharmacy(id, req.user, dto);
   }
 
@@ -155,13 +178,19 @@ export class PharmacyController {
 
   @ApiOperation({ summary: 'Search medicine in a pharmacy' })
   @Get(':pharmacyId/medicines/search')
-  async searchMedicine(@Param('pharmacyId') pharmacyId: string, @Query('name') name: string) {
+  async searchMedicine(
+    @Param('pharmacyId') pharmacyId: string,
+    @Query('name') name: string,
+  ) {
     return this.pharmacyService.searchMedicineInPharmacy(pharmacyId, name);
   }
 
   // Legacy alias: GET /api/pharmacies/pharmacies/:pharmacyId/search-medicine?name=...
   @Get('pharmacies/:pharmacyId/search-medicine')
-  async searchMedicineLegacy(@Param('pharmacyId') pharmacyId: string, @Query('name') name: string) {
+  async searchMedicineLegacy(
+    @Param('pharmacyId') pharmacyId: string,
+    @Query('name') name: string,
+  ) {
     return this.pharmacyService.searchMedicineInPharmacy(pharmacyId, name);
   }
 
@@ -186,8 +215,16 @@ export class PharmacyController {
   @ApiOperation({ summary: 'Find nearby pharmacies' })
   @ApiQuery({ name: 'maxDistance', required: false })
   @Get('nearby')
-  async nearby(@Query('longitude') longitude: string, @Query('latitude') latitude: string, @Query('maxDistance') maxDistance?: string) {
-    return this.pharmacyService.findNearbyPharmacies(parseFloat(longitude), parseFloat(latitude), parseInt(maxDistance || '5000', 10));
+  async nearby(
+    @Query('longitude') longitude: string,
+    @Query('latitude') latitude: string,
+    @Query('maxDistance') maxDistance?: string,
+  ) {
+    return this.pharmacyService.findNearbyPharmacies(
+      parseFloat(longitude),
+      parseFloat(latitude),
+      parseInt(maxDistance || '5000', 10),
+    );
   }
 
   @ApiBearerAuth()
@@ -195,7 +232,10 @@ export class PharmacyController {
   @Roles(UserRole.PHARMACIST)
   @ApiOperation({ summary: 'Create new product and add to pharmacy' })
   @Post('me/products/new')
-  async createProduct(@Req() req: any, @Body() dto: CreateProductForPharmacyDto) {
+  async createProduct(
+    @Req() req: any,
+    @Body() dto: CreateProductForPharmacyDto,
+  ) {
     return this.pharmacyService.createProductAndAdd(req.user, dto);
   }
 
@@ -204,7 +244,10 @@ export class PharmacyController {
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(UserRole.PHARMACIST)
   @Post('create-product')
-  async createProductLegacy(@Req() req: any, @Body() dto: CreateProductForPharmacyDto) {
+  async createProductLegacy(
+    @Req() req: any,
+    @Body() dto: CreateProductForPharmacyDto,
+  ) {
     return this.createProduct(req, dto);
   }
 

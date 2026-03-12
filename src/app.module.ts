@@ -45,10 +45,12 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
         DB_SYNCHRONIZE: Joi.boolean().default(false),
       }),
     }),
-    ThrottlerModule.forRoot([{
-      ttl: 60000,
-      limit: 10,
-    }]),
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60000,
+        limit: 10,
+      },
+    ]),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -79,7 +81,7 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
   ],
   controllers: [AppController],
   providers: [
-    AppService, 
+    AppService,
     OrderTimeoutJob,
     {
       provide: APP_GUARD,

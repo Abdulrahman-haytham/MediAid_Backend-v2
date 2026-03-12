@@ -21,7 +21,7 @@ export class Chat {
   @JoinColumn()
   order: Order;
 
-  @OneToMany(() => ChatMessage, message => message.chat, { cascade: true })
+  @OneToMany(() => ChatMessage, (message) => message.chat, { cascade: true })
   messages: ChatMessage[];
 
   @CreateDateColumn()
@@ -36,7 +36,10 @@ export class ChatMessage {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @ManyToOne(() => Chat, chat => chat.messages, { onDelete: 'CASCADE', nullable: false })
+  @ManyToOne(() => Chat, (chat) => chat.messages, {
+    onDelete: 'CASCADE',
+    nullable: false,
+  })
   chat: Chat;
 
   @ManyToOne(() => User, { nullable: false, eager: true })

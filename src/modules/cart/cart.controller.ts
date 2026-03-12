@@ -33,7 +33,10 @@ export class CartController {
       message: 'Product added to cart successfully.',
       cart: {
         items: cart.items,
-        totalItems: (cart.items || []).reduce((sum, item) => sum + item.quantity, 0),
+        totalItems: (cart.items || []).reduce(
+          (sum, item) => sum + item.quantity,
+          0,
+        ),
       },
     };
   }
@@ -95,4 +98,3 @@ export class CartController {
     return { message: 'Cart cleared successfully' };
   }
 }
-

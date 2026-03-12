@@ -1,4 +1,8 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Cart, CartItem } from './cart.entity';
@@ -13,14 +17,20 @@ export class CartService {
   constructor(
     @InjectRepository(Cart) private readonly cartRepo: Repository<Cart>,
     @InjectRepository(CartItem) private readonly itemRepo: Repository<CartItem>,
-    @InjectRepository(Product) private readonly productRepo: Repository<Product>,
-    @InjectRepository(Pharmacy) private readonly pharmacyRepo: Repository<Pharmacy>,
-    @InjectRepository(PharmacyMedicine) private readonly pharmMedRepo: Repository<PharmacyMedicine>,
+    @InjectRepository(Product)
+    private readonly productRepo: Repository<Product>,
+    @InjectRepository(Pharmacy)
+    private readonly pharmacyRepo: Repository<Pharmacy>,
+    @InjectRepository(PharmacyMedicine)
+    private readonly pharmMedRepo: Repository<PharmacyMedicine>,
     @InjectRepository(User) private readonly userRepo: Repository<User>,
   ) {}
 
   private async getOrCreateCart(user: User): Promise<Cart> {
-    let cart = await this.cartRepo.findOne({ where: { user: { id: user.id } }, relations: ['user', 'items'] });
+    let cart = await this.cartRepo.findOne({
+      where: { user: { id: user.id } },
+      relations: ['user', 'items'],
+    });
     if (!cart) {
       cart = this.cartRepo.create({ user, items: [] });
       cart = await this.cartRepo.save(cart);
@@ -29,24 +39,40 @@ export class CartService {
   }
 
   async add(user: User, dto: AddToCartDto): Promise<Cart> {
-    const product = await this.productRepo.findOne({ where: { id: dto.productId } });
+    const product = await this.productRepo.findOne({
+      where: { id: dto.productId },
+    });
     if (!product) throw new NotFoundException('المنتج غير موجود.');
-    const pharmacy = await this.pharmacyRepo.findOne({ where: { id: dto.pharmacyId } });
+    const pharmacy = await this.pharmacyRepo.findOne({
+      where: { id: dto.pharmacyId },
+    });
     if (!pharmacy) throw new NotFoundException('الصيدلية غير موجودة.');
     const stock = await this.pharmMedRepo.findOne({
-      where: { pharmacy: { id: dto.pharmacyId }, product: { id: dto.productId } },
+      where: {
+        pharmacy: { id: dto.pharmacyId },
+        product: { id: dto.productId },
+      },
       relations: ['pharmacy', 'product'],
     });
     if (!stock || stock.quantity < dto.quantity) {
-      throw new ConflictException('المنتج غير متوفر في هذه الصيدلية أو الكمية غير كافية.');
+      throw new ConflictException(
+        'المنتج غير متوفر في هذه الصيدلية أو الكمية غير كافية.',
+      );
     }
     const cart = await this.getOrCreateCart(user);
-    const items = await this.itemRepo.find({ where: { cart: { id: cart.id } }, relations: ['product', 'pharmacy', 'cart'] });
-    const existing = items.find(i => i.product.id === product.id && i.pharmacy.id === pharmacy.id);
+    const items = await this.itemRepo.find({
+      where: { cart: { id: cart.id } },
+      relations: ['product', 'pharmacy', 'cart'],
+    });
+    const existing = items.find(
+      (i) => i.product.id === product.id && i.pharmacy.id === pharmacy.id,
+    );
     if (existing) {
       const nextQuantity = existing.quantity + dto.quantity;
       if (stock.quantity < nextQuantity) {
-        throw new ConflictException('Requested quantity exceeds available stock.');
+        throw new ConflictException(
+          'Requested quantity exceeds available stock.',
+        );
       }
       existing.quantity = nextQuantity;
       await this.itemRepo.save(existing);
@@ -60,35 +86,54 @@ export class CartService {
       });
       await this.itemRepo.save(item);
     }
-    const updated = await this.cartRepo.findOne({ where: { id: cart.id }, relations: ['items', 'items.product', 'items.pharmacy'] });
+    const updated = await this.cartRepo.findOne({
+      where: { id: cart.id },
+      relations: ['items', 'items.product', 'items.pharmacy'],
+    });
     if (!updated) throw new NotFoundException('Cart not found after update');
     return updated;
   }
 
   async get(user: User): Promise<Cart | null> {
-    return this.cartRepo.findOne({ where: { user: { id: user.id } }, relations: ['items', 'items.product', 'items.pharmacy'] });
+    return this.cartRepo.findOne({
+      where: { user: { id: user.id } },
+      relations: ['items', 'items.product', 'items.pharmacy'],
+    });
   }
 
-  async updateItem(user: User, productId: string, dto: UpdateItemDto, pharmacyId?: string): Promise<Cart> {
+  async updateItem(
+    user: User,
+    productId: string,
+    dto: UpdateItemDto,
+    pharmacyId?: string,
+  ): Promise<Cart> {
     const cart = await this.get(user);
     if (!cart) throw new NotFoundException('Cart not found');
     const items = cart.items || [];
-    const matchedItems = items.filter(i => i.product.id === productId);
-    if (matchedItems.length === 0) throw new NotFoundException('Product not found in cart');
+    const matchedItems = items.filter((i) => i.product.id === productId);
+    if (matchedItems.length === 0)
+      throw new NotFoundException('Product not found in cart');
     if (matchedItems.length > 1 && !pharmacyId) {
-      throw new ConflictException('This product exists from multiple pharmacies. Provide pharmacyId.');
+      throw new ConflictException(
+        'This product exists from multiple pharmacies. Provide pharmacyId.',
+      );
     }
     const item = pharmacyId
-      ? matchedItems.find(i => i.pharmacy.id === pharmacyId)
+      ? matchedItems.find((i) => i.pharmacy.id === pharmacyId)
       : matchedItems[0];
     if (!item) throw new NotFoundException('Product not found in cart');
     if (dto.quantity > 0) {
       const stock = await this.pharmMedRepo.findOne({
-        where: { pharmacy: { id: item.pharmacy.id }, product: { id: item.product.id } },
+        where: {
+          pharmacy: { id: item.pharmacy.id },
+          product: { id: item.product.id },
+        },
         relations: ['pharmacy', 'product'],
       });
       if (!stock || stock.quantity < dto.quantity) {
-        throw new ConflictException('Requested quantity exceeds available stock.');
+        throw new ConflictException(
+          'Requested quantity exceeds available stock.',
+        );
       }
       item.quantity = dto.quantity;
       await this.itemRepo.save(item);
@@ -100,15 +145,24 @@ export class CartService {
     return updated;
   }
 
-  async removeItem(user: User, productId: string, pharmacyId?: string): Promise<Cart> {
+  async removeItem(
+    user: User,
+    productId: string,
+    pharmacyId?: string,
+  ): Promise<Cart> {
     const cart = await this.get(user);
     if (!cart) throw new NotFoundException('Cart not found');
-    const items = (cart.items || []).filter(i => i.product.id === productId);
-    if (items.length === 0) throw new NotFoundException('Product not found in cart');
+    const items = (cart.items || []).filter((i) => i.product.id === productId);
+    if (items.length === 0)
+      throw new NotFoundException('Product not found in cart');
     if (items.length > 1 && !pharmacyId) {
-      throw new ConflictException('This product exists from multiple pharmacies. Provide pharmacyId.');
+      throw new ConflictException(
+        'This product exists from multiple pharmacies. Provide pharmacyId.',
+      );
     }
-    const item = pharmacyId ? items.find(i => i.pharmacy.id === pharmacyId) : items[0];
+    const item = pharmacyId
+      ? items.find((i) => i.pharmacy.id === pharmacyId)
+      : items[0];
     if (!item) throw new NotFoundException('Product not found in cart');
     await this.itemRepo.delete(item.id);
     const updated = await this.get(user);
@@ -124,11 +178,16 @@ export class CartService {
   }
 
   async getPharmacyNamesFromCart(userId: string): Promise<string[]> {
-    const cart = await this.cartRepo.findOne({ where: { user: { id: userId } }, relations: ['items', 'items.pharmacy'] });
+    const cart = await this.cartRepo.findOne({
+      where: { user: { id: userId } },
+      relations: ['items', 'items.pharmacy'],
+    });
     if (!cart || !cart.items || cart.items.length === 0) {
       throw new ConflictException('السلة فارغة أو غير موجودة');
     }
-    const pharmacyNames = Array.from(new Set(cart.items.map(i => i.pharmacy.name)));
+    const pharmacyNames = Array.from(
+      new Set(cart.items.map((i) => i.pharmacy.name)),
+    );
     return pharmacyNames;
   }
 }

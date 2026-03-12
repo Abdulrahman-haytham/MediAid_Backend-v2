@@ -21,7 +21,10 @@ export class Cart {
   @ManyToOne(() => User, { nullable: false })
   user: User;
 
-  @OneToMany(() => CartItem, item => item.cart, { cascade: true, eager: true })
+  @OneToMany(() => CartItem, (item) => item.cart, {
+    cascade: true,
+    eager: true,
+  })
   items: CartItem[];
 
   @UpdateDateColumn()
@@ -39,7 +42,10 @@ export class CartItem {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @ManyToOne(() => Cart, cart => cart.items, { nullable: false, onDelete: 'CASCADE' })
+  @ManyToOne(() => Cart, (cart) => cart.items, {
+    nullable: false,
+    onDelete: 'CASCADE',
+  })
   @JoinColumn()
   cart: Cart;
 

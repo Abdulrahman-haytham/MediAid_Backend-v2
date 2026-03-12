@@ -1,4 +1,9 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, ILike } from 'typeorm';
 import { Product, ProductType } from './product.entity';
@@ -19,19 +24,27 @@ function simpleSlugify(text: string): string {
 @Injectable()
 export class ProductService {
   constructor(
-    @InjectRepository(Product) private readonly productRepo: Repository<Product>,
-    @InjectRepository(Category) private readonly categoryRepo: Repository<Category>,
+    @InjectRepository(Product)
+    private readonly productRepo: Repository<Product>,
+    @InjectRepository(Category)
+    private readonly categoryRepo: Repository<Category>,
     @InjectRepository(User) private readonly userRepo: Repository<User>,
   ) {}
 
   async create(currentUser: User, dto: CreateProductDto): Promise<Product> {
     if (!currentUser) throw new ForbiddenException('Authentication required');
-    if (currentUser.type !== UserRole.ADMIN) throw new ForbiddenException('Access denied');
+    if (currentUser.type !== UserRole.ADMIN)
+      throw new ForbiddenException('Access denied');
 
-    const exists = await this.productRepo.findOne({ where: { name: dto.name } });
-    if (exists) throw new ConflictException('Product already exists with this name');
+    const exists = await this.productRepo.findOne({
+      where: { name: dto.name },
+    });
+    if (exists)
+      throw new ConflictException('Product already exists with this name');
 
-    const category = await this.categoryRepo.findOne({ where: { id: dto.categoryId } });
+    const category = await this.categoryRepo.findOne({
+      where: { id: dto.categoryId },
+    });
     if (!category) throw new NotFoundException('Category not found');
 
     const product = this.productRepo.create({
@@ -55,12 +68,18 @@ export class ProductService {
     if (!currentUser) {
       return this.productRepo.find();
     }
-    if (currentUser.type === UserRole.ADMIN || currentUser.type === UserRole.USER) {
+    if (
+      currentUser.type === UserRole.ADMIN ||
+      currentUser.type === UserRole.USER
+    ) {
       return this.productRepo.find();
     }
     if (currentUser.type === UserRole.PHARMACIST) {
       return this.productRepo.find({
-        where: [{ isAdminCreated: true }, { createdBy: { id: currentUser.id } }],
+        where: [
+          { isAdminCreated: true },
+          { createdBy: { id: currentUser.id } },
+        ],
         relations: ['createdBy'],
       });
     }
@@ -76,7 +95,9 @@ export class ProductService {
   async update(id: string, dto: UpdateProductDto): Promise<Product> {
     const product = await this.findOne(id);
     if (dto.categoryId) {
-      const category = await this.categoryRepo.findOne({ where: { id: dto.categoryId } });
+      const category = await this.categoryRepo.findOne({
+        where: { id: dto.categoryId },
+      });
       if (!category) throw new NotFoundException('Category not found');
       (product as any).category = category;
       delete (dto as any).categoryId;
@@ -95,7 +116,15 @@ export class ProductService {
     const slug = simpleSlugify(name);
     return this.productRepo.find({
       where: { slug: ILike(`%${slug}%`) },
-      select: { id: true, name: true, description: true, slug: true, price: true, imageUrl: true, brand: true },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        slug: true,
+        price: true,
+        imageUrl: true,
+        brand: true,
+      },
       order: { createdAt: 'DESC' },
     });
   }
@@ -106,40 +135,67 @@ export class ProductService {
       take: 10,
       select: { name: true },
     });
-    return items.map(i => ({ name: i.name }));
+    return items.map((i) => ({ name: i.name }));
   }
 
   async toggleFavorite(currentUser: User, productId: string) {
-    const product = await this.productRepo.findOne({ where: { id: productId } });
+    const product = await this.productRepo.findOne({
+      where: { id: productId },
+    });
     if (!product) throw new NotFoundException('Product not found');
 
-    const user = await this.userRepo.findOne({ where: { id: currentUser.id }, relations: ['favorites'] });
+    const user = await this.userRepo.findOne({
+      where: { id: currentUser.id },
+      relations: ['favorites'],
+    });
     if (!user) throw new NotFoundException('User not found');
 
-    const exists = (user.favorites || []).find(p => p.id === product.id);
+    const exists = (user.favorites || []).find((p) => p.id === product.id);
     if (exists) {
-      user.favorites = (user.favorites || []).filter(p => p.id !== product.id);
+      user.favorites = (user.favorites || []).filter(
+        (p) => p.id !== product.id,
+      );
       await this.userRepo.save(user);
-      return { message: 'Product removed from favorites', favorites: user.favorites };
+      return {
+        message: 'Product removed from favorites',
+        favorites: user.favorites,
+      };
     } else {
       user.favorites = [...(user.favorites || []), product];
       await this.userRepo.save(user);
-      return { message: 'Product added to favorites', favorites: user.favorites };
+      return {
+        message: 'Product added to favorites',
+        favorites: user.favorites,
+      };
     }
   }
 
   async findFavoriteProducts(userId: string): Promise<Product[]> {
-    const user = await this.userRepo.findOne({ where: { id: userId }, relations: ['favorites'] });
+    const user = await this.userRepo.findOne({
+      where: { id: userId },
+      relations: ['favorites'],
+    });
     if (!user || !Array.isArray(user.favorites)) {
       throw new ConflictException('Invalid favorites');
     }
     return user.favorites;
   }
 
-  async searchProducts(categoryId: string, searchTerm: string): Promise<Product[]> {
+  async searchProducts(
+    categoryId: string,
+    searchTerm: string,
+  ): Promise<Product[]> {
     return this.productRepo.find({
       where: { category: { id: categoryId }, name: ILike(`%${searchTerm}%`) },
-      select: { id: true, name: true, description: true, slug: true, price: true, imageUrl: true, brand: true },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        slug: true,
+        price: true,
+        imageUrl: true,
+        brand: true,
+      },
     });
   }
 }

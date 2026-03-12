@@ -1,4 +1,14 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Put,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { CategoryService } from './category.service';
@@ -28,7 +38,11 @@ export class CategoryController {
   @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: 'Update an existing category (Admin only)' })
   @Put(':id')
-  async update(@Param('id') id: string, @Body() dto: UpdateCategoryDto, @Req() req: any) {
+  async update(
+    @Param('id') id: string,
+    @Body() dto: UpdateCategoryDto,
+    @Req() req: any,
+  ) {
     const category = await this.categoryService.update(id, dto);
     return { message: 'Category updated successfully', category };
   }

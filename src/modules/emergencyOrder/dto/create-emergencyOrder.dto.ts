@@ -1,4 +1,13 @@
-import { IsEnum, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
+import {
+  IsEnum,
+  IsInt,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+} from 'class-validator';
 import { EmergencyOrderPriority } from '../entities/emergencyOrder.entity';
 
 export class CreateEmergencyOrderDto {

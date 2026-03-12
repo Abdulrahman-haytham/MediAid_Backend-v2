@@ -10,7 +10,19 @@ import { Category } from '../category/category.entity';
 import { Cart, CartItem } from '../cart/cart.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Order, OrderItem, User, Pharmacy, PharmacyMedicine, Product, Category, Cart, CartItem])],
+  imports: [
+    TypeOrmModule.forFeature([
+      Order,
+      OrderItem,
+      User,
+      Pharmacy,
+      PharmacyMedicine,
+      Product,
+      Category,
+      Cart,
+      CartItem,
+    ]),
+  ],
   controllers: [OrderController],
   providers: [OrderService],
   exports: [OrderService],

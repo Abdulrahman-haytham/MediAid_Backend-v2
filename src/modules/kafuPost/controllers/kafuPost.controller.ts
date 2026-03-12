@@ -1,6 +1,22 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Put,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiBearerAuth,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { KafuPostService } from '../services/kafuPost.service';
 import { CreateKafuPostDto } from '../dto/create-kafuPost.dto';
 import { RolesGuard } from '../../../common/guards/roles.guard';
@@ -29,13 +45,13 @@ export class KafuPostController {
   @Get('area')
   async findByArea(@Query('areaName') areaName: string) {
     if (!areaName) {
-        // Handle missing areaName similar to legacy code which returns 400 if manually checked, 
-        // but here it might be better to return empty list or throw exception if strict.
-        // Legacy code: if (!areaName) return res.status(400)
-        // Let's rely on service or return error here.
-        // Or simply if service doesn't throw, we are fine. But service expects string.
-        // Let's throw BadRequest if missing.
-        throw new Error('areaName is required'); 
+      // Handle missing areaName similar to legacy code which returns 400 if manually checked,
+      // but here it might be better to return empty list or throw exception if strict.
+      // Legacy code: if (!areaName) return res.status(400)
+      // Let's rely on service or return error here.
+      // Or simply if service doesn't throw, we are fine. But service expects string.
+      // Let's throw BadRequest if missing.
+      throw new Error('areaName is required');
     }
     return await this.kafuPostService.findByArea(areaName);
   }

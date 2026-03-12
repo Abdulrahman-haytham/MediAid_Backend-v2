@@ -27,8 +27,12 @@ export class ResponseInterceptor<T> implements NestInterceptor<T, Response<T>> {
         const statusCode = response.statusCode;
 
         // If data is already in the format, return it as is (avoid double wrapping)
-        if (data && data.success !== undefined && data.statusCode !== undefined) {
-            return data;
+        if (
+          data &&
+          data.success !== undefined &&
+          data.statusCode !== undefined
+        ) {
+          return data;
         }
 
         // Handle specific cases where data might have a message property
@@ -39,9 +43,9 @@ export class ResponseInterceptor<T> implements NestInterceptor<T, Response<T>> {
           if (data.message) {
             message = data.message;
             // Optionally remove message from data if it's redundant, but keeping it is safer for now
-             if (Object.keys(data).length === 1) {
-                 responseData = null; // Only message was returned
-             }
+            if (Object.keys(data).length === 1) {
+              responseData = null; // Only message was returned
+            }
           }
         }
 

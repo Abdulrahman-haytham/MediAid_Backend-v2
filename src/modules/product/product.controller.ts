@@ -1,6 +1,22 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Put,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiBearerAuth,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { ProductService } from './product.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
@@ -44,7 +60,9 @@ export class ProductController {
   @ApiOperation({ summary: 'Get user favorite products' })
   @Get('favorites')
   async getFavorites(@Req() req: any) {
-    const favorites = await this.productService.findFavoriteProducts(req.user.id);
+    const favorites = await this.productService.findFavoriteProducts(
+      req.user.id,
+    );
     return { favorites };
   }
 
@@ -69,15 +87,33 @@ export class ProductController {
   @ApiOperation({ summary: 'Search products within a category' })
   @ApiQuery({ name: 'q', required: true })
   @Get('category/:categoryId/search')
-  async searchByCategory(@Param('categoryId') categoryId: string, @Query('q') q: string) {
+  async searchByCategory(
+    @Param('categoryId') categoryId: string,
+    @Query('q') q: string,
+  ) {
     if (!q) {
-      return { message: 'يرجى إدخال كلمة للبحث', success: false, results: 0, data: [] };
+      return {
+        message: 'يرجى إدخال كلمة للبحث',
+        success: false,
+        results: 0,
+        data: [],
+      };
     }
     const products = await this.productService.searchProducts(categoryId, q);
     if (!products || products.length === 0) {
-      return { success: true, results: 0, data: [], message: 'لا يوجد منتجات مطابقة' };
+      return {
+        success: true,
+        results: 0,
+        data: [],
+        message: 'لا يوجد منتجات مطابقة',
+      };
     }
-    return { success: true, results: products.length, data: products, message: 'تم العثور على المنتجات بنجاح' };
+    return {
+      success: true,
+      results: products.length,
+      data: products,
+      message: 'تم العثور على المنتجات بنجاح',
+    };
   }
 
   @ApiOperation({ summary: 'Get product by ID' })
@@ -92,7 +128,11 @@ export class ProductController {
   @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: 'Update product (Admin only)' })
   @Put(':id')
-  async update(@Param('id') id: string, @Body() dto: UpdateProductDto, @Req() req: any) {
+  async update(
+    @Param('id') id: string,
+    @Body() dto: UpdateProductDto,
+    @Req() req: any,
+  ) {
     const product = await this.productService.update(id, dto);
     return { message: 'Product updated successfully', product };
   }

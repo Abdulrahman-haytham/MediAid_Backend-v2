@@ -7,4 +7,3 @@ export class RequestPasswordResetDto {
   @IsNotEmpty({ message: 'Email is required' })
   email: string;
 }
-

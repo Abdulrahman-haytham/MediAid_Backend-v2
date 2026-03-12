@@ -1,4 +1,9 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { LessThan, Repository } from 'typeorm';
 import { KafuPost, KafuPostStatus } from '../entities/kafuPost.entity';
@@ -12,7 +17,10 @@ export class KafuPostService {
     private readonly kafuPostRepository: Repository<KafuPost>,
   ) {}
 
-  async create(user: User, createKafuPostDto: CreateKafuPostDto): Promise<KafuPost> {
+  async create(
+    user: User,
+    createKafuPostDto: CreateKafuPostDto,
+  ): Promise<KafuPost> {
     const { expiresInDays, ...data } = createKafuPostDto;
     const days = expiresInDays || 3;
     const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
@@ -44,7 +52,9 @@ export class KafuPostService {
   }
 
   async acceptRequest(postId: string, helper: User): Promise<KafuPost> {
-    const post = await this.kafuPostRepository.findOne({ where: { id: postId } });
+    const post = await this.kafuPostRepository.findOne({
+      where: { id: postId },
+    });
 
     if (!post) {
       throw new NotFoundException('Post not found');
@@ -56,7 +66,7 @@ export class KafuPostService {
 
     // Prevent user from accepting their own post
     if (post.user.id === helper.id) {
-        throw new BadRequestException('You cannot accept your own request');
+      throw new BadRequestException('You cannot accept your own request');
     }
 
     post.helper = helper;
@@ -66,9 +76,9 @@ export class KafuPostService {
   }
 
   async completeRequest(postId: string, helper: User): Promise<KafuPost> {
-    const post = await this.kafuPostRepository.findOne({ 
-        where: { id: postId },
-        relations: ['helper']
+    const post = await this.kafuPostRepository.findOne({
+      where: { id: postId },
+      relations: ['helper'],
     });
 
     if (!post) {
@@ -76,9 +86,9 @@ export class KafuPostService {
     }
 
     if (post.status !== KafuPostStatus.IN_PROGRESS) {
-        throw new BadRequestException('Invalid request completion status');
+      throw new BadRequestException('Invalid request completion status');
     }
-    
+
     if (!post.helper || post.helper.id !== helper.id) {
       throw new BadRequestException('You are not the helper for this request');
     }
@@ -89,9 +99,9 @@ export class KafuPostService {
   }
 
   async delete(postId: string, user: User): Promise<void> {
-    const post = await this.kafuPostRepository.findOne({ 
-        where: { id: postId },
-        relations: ['user'] 
+    const post = await this.kafuPostRepository.findOne({
+      where: { id: postId },
+      relations: ['user'],
     });
 
     if (!post) {
@@ -99,7 +109,9 @@ export class KafuPostService {
     }
 
     if (post.user.id !== user.id && user.type !== UserRole.ADMIN) {
-      throw new ForbiddenException('You are not authorized to delete this post.');
+      throw new ForbiddenException(
+        'You are not authorized to delete this post.',
+      );
     }
 
     await this.kafuPostRepository.remove(post);

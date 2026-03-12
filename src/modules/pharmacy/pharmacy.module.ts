@@ -11,7 +11,14 @@ import { OrderModule } from '../order/order.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Pharmacy, PharmacyMedicine, PharmacyReview, Product, User, Category]),
+    TypeOrmModule.forFeature([
+      Pharmacy,
+      PharmacyMedicine,
+      PharmacyReview,
+      Product,
+      User,
+      Category,
+    ]),
     CartModule,
     OrderModule,
   ],

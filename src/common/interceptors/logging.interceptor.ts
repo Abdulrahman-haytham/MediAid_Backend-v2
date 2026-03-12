@@ -17,7 +17,7 @@ export class LoggingInterceptor implements NestInterceptor {
     const request = context.switchToHttp().getRequest();
     const { method, url } = request;
     const startTime = Date.now();
-    
+
     // Ensure correlation ID exists
     const correlationId = request.headers['x-correlation-id'] || uuidv4();
     request.headers['x-correlation-id'] = correlationId;
@@ -27,7 +27,7 @@ export class LoggingInterceptor implements NestInterceptor {
         const response = context.switchToHttp().getResponse();
         const statusCode = response.statusCode;
         const duration = Date.now() - startTime;
-        
+
         this.logger.log(
           `[${correlationId}] ${method} ${url} ${statusCode} - ${duration}ms`,
         );

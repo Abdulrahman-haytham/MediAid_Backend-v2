@@ -100,7 +100,7 @@ export class Pharmacy {
   @UpdateDateColumn()
   updatedAt: Date;
 
-  @OneToMany(() => PharmacyMedicine, pm => pm.pharmacy)
+  @OneToMany(() => PharmacyMedicine, (pm) => pm.pharmacy)
   medicines: PharmacyMedicine[];
 
   @BeforeInsert()
@@ -117,7 +117,9 @@ export class PharmacyMedicine {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @ManyToOne(() => Pharmacy, pharmacy => pharmacy.medicines, { nullable: false })
+  @ManyToOne(() => Pharmacy, (pharmacy) => pharmacy.medicines, {
+    nullable: false,
+  })
   pharmacy: Pharmacy;
 
   @ManyToOne(() => Product, { nullable: false })

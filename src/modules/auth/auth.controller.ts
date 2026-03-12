@@ -15,7 +15,10 @@ export class AuthController {
 
   @ApiOperation({ summary: 'Login user and return JWT token' })
   @ApiResponse({ status: 200, description: 'Login successful' })
-  @ApiResponse({ status: 401, description: 'Invalid credentials or email not verified' })
+  @ApiResponse({
+    status: 401,
+    description: 'Invalid credentials or email not verified',
+  })
   @HttpCode(HttpStatus.OK)
   @Post('login')
   async login(@Body() loginDto: LoginDto) {
@@ -27,7 +30,10 @@ export class AuthController {
   @ApiResponse({ status: 400, description: 'Invalid code or email' })
   @Post('verify-email')
   async verifyEmail(@Body() verifyEmailDto: VerifyEmailDto) {
-    return this.userService.verifyEmail(verifyEmailDto.email, verifyEmailDto.verificationCode);
+    return this.userService.verifyEmail(
+      verifyEmailDto.email,
+      verifyEmailDto.verificationCode,
+    );
   }
 
   @ApiOperation({ summary: 'Request password reset (sends token to email)' })
@@ -42,6 +48,10 @@ export class AuthController {
   @ApiResponse({ status: 400, description: 'Invalid or expired token' })
   @Post('reset-password')
   async resetPassword(@Body() body: any) {
-    return this.userService.resetPassword(body.email, body.token, body.password);
+    return this.userService.resetPassword(
+      body.email,
+      body.token,
+      body.password,
+    );
   }
 }
