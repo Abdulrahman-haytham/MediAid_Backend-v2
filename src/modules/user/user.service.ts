@@ -50,7 +50,7 @@ export class UserService {
     });
 
     await this.userRepository.save(newUser);
-    
+
     // Send Email
     await this.mailService.sendVerificationEmail(email, verificationCode);
 
@@ -66,7 +66,9 @@ export class UserService {
       `Admin creation attempt for email=${createUserDto.email ?? 'unknown'}`,
     );
     if (process.env.NODE_ENV === 'production') {
-      throw new ForbiddenException('Admin bootstrap endpoint is disabled in production');
+      throw new ForbiddenException(
+        'Admin bootstrap endpoint is disabled in production',
+      );
     }
     if (secretKey !== process.env.SECRET_KEY_ADMIN) {
       this.logger.warn('Admin creation failed due to invalid secret key');
@@ -123,8 +125,10 @@ export class UserService {
     const user = await this.findOne(id);
 
     if (updateUserDto.location) {
-      user.latitude = updateUserDto.location.coordinates[0];
-      user.longitude = updateUserDto.location.coordinates[1];
+      if (updateUserDto.location?.coordinates) {
+        user.latitude = updateUserDto.location.coordinates[0];
+        user.longitude = updateUserDto.location.coordinates[1];
+      }
       delete updateUserDto.location;
     }
 
@@ -161,7 +165,7 @@ export class UserService {
     user.resetPasswordExpires = new Date(Date.now() + 3600000);
 
     await this.userRepository.save(user);
-    
+
     // Send Email
     await this.mailService.sendPasswordResetEmail(email, resetCode);
   }

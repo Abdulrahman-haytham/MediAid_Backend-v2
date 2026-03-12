@@ -1,7 +1,17 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Order, OrderItem, OrderStatus, OrderType } from '../entities/order.entity';
+import {
+  Order,
+  OrderItem,
+  OrderStatus,
+  OrderType,
+} from '../entities/order.entity';
 import { CreateOrderDto } from '../dto/create-order.dto';
 import { RateOrderDto } from '../dto/update-order.dto';
 import { User, UserRole } from '../../user/user.entity';
@@ -23,10 +33,13 @@ function simpleSlugify(text: string): string {
 export class OrderService {
   constructor(
     @InjectRepository(Order) private readonly orderRepo: Repository<Order>,
-    @InjectRepository(OrderItem) private readonly orderItemRepo: Repository<OrderItem>,
-    @InjectRepository(Pharmacy) private readonly pharmacyRepo: Repository<Pharmacy>,
+    @InjectRepository(OrderItem)
+    private readonly orderItemRepo: Repository<OrderItem>,
+    @InjectRepository(Pharmacy)
+    private readonly pharmacyRepo: Repository<Pharmacy>,
     @InjectRepository(Cart) private readonly cartRepo: Repository<Cart>,
-    @InjectRepository(CartItem) private readonly cartItemRepo: Repository<CartItem>,
+    @InjectRepository(CartItem)
+    private readonly cartItemRepo: Repository<CartItem>,
   ) {}
 
   private async assertCanAccessOrder(order: Order, user: User): Promise<void> {
@@ -53,13 +66,17 @@ export class OrderService {
   }
 
   async createOrderFromCart(user: User, dto: CreateOrderDto): Promise<Order> {
-    return this.orderRepo.manager.transaction(async manager => {
+    return this.orderRepo.manager.transaction(async (manager) => {
       const { pharmacyName, orderType, deliveryAddress } = dto;
       if (!pharmacyName || !orderType) {
-        throw new ConflictException('Pharmacy name and order type are required.');
+        throw new ConflictException(
+          'Pharmacy name and order type are required.',
+        );
       }
       if (orderType === OrderType.DELIVERY && !deliveryAddress) {
-        throw new ConflictException('Delivery address is required for delivery orders.');
+        throw new ConflictException(
+          'Delivery address is required for delivery orders.',
+        );
       }
       const pharmacySlug = simpleSlugify(pharmacyName);
       const pharmacyRepo = manager.getRepository(Pharmacy);
@@ -68,7 +85,9 @@ export class OrderService {
       const pharmMedRepo = manager.getRepository(PharmacyMedicine);
       const orderRepo = manager.getRepository(Order);
       const orderItemRepo = manager.getRepository(OrderItem);
-      const pharmacy = await pharmacyRepo.findOne({ where: { slug: pharmacySlug } });
+      const pharmacy = await pharmacyRepo.findOne({
+        where: { slug: pharmacySlug },
+      });
       if (!pharmacy) {
         throw new NotFoundException(`Pharmacy "${pharmacyName}" not found.`);
       }
@@ -95,7 +114,9 @@ export class OrderService {
             .leftJoinAndSelect('pm.pharmacy', 'pharmacy')
             .leftJoinAndSelect('pm.product', 'product')
             .where('pharmacy.id = :pharmacyId', { pharmacyId: pharmacy.id })
-            .andWhere('product.id = :productId', { productId: cartItem.product.id })
+            .andWhere('product.id = :productId', {
+              productId: cartItem.product.id,
+            })
             .setLock('pessimistic_write')
             .getOne();
           if (stock) {
@@ -121,13 +142,16 @@ export class OrderService {
         }
       }
       if (validPharmacyItems.length === 0) {
-        throw new ConflictException(`No valid items from ${pharmacyName} found in your cart to create an order.`);
+        throw new ConflictException(
+          `No valid items from ${pharmacyName} found in your cart to create an order.`,
+        );
       }
       const order = orderRepo.create({
         user,
         pharmacy,
         orderType,
-        deliveryAddress: orderType === OrderType.DELIVERY ? deliveryAddress : null,
+        deliveryAddress:
+          orderType === OrderType.DELIVERY ? deliveryAddress : null,
         status: OrderStatus.PENDING,
         totalPrice,
       });
@@ -143,28 +167,55 @@ export class OrderService {
         item.stock.quantity -= item.quantity;
         await pharmMedRepo.save(item.stock);
       }
-      const orderedCartItemIds = new Set(validPharmacyItems.map(i => i.cartItemId));
+      const orderedCartItemIds = new Set(
+        validPharmacyItems.map((i) => i.cartItemId),
+      );
       for (const cartItem of cart.items) {
         if (orderedCartItemIds.has(cartItem.id)) {
           await cartItemRepo.delete(cartItem.id);
         }
       }
-      const finalOrder = await orderRepo.findOne({ where: { id: savedOrder.id }, relations: ['items', 'pharmacy', 'user'] });
-      if (!finalOrder) throw new NotFoundException('Order not found after creation');
+      const finalOrder = await orderRepo.findOne({
+        where: { id: savedOrder.id },
+        relations: ['items', 'pharmacy', 'user'],
+      });
+      if (!finalOrder)
+        throw new NotFoundException('Order not found after creation');
       return finalOrder;
     });
   }
 
-  private validateStatusTransition(current: OrderStatus, next: OrderStatus, user: User) {
-    const allowedNext: Record<UserRole, Partial<Record<OrderStatus, OrderStatus[]>>> = {
+  private validateStatusTransition(
+    current: OrderStatus,
+    next: OrderStatus,
+    user: User,
+  ) {
+    const allowedNext: Record<
+      UserRole,
+      Partial<Record<OrderStatus, OrderStatus[]>>
+    > = {
       [UserRole.USER]: {
         [OrderStatus.PENDING]: [OrderStatus.CANCELED],
       },
       [UserRole.PHARMACIST]: {
-        [OrderStatus.PENDING]: [OrderStatus.ACCEPTED, OrderStatus.REJECTED, OrderStatus.CANCELED],
-        [OrderStatus.ACCEPTED]: [OrderStatus.PREPARING, OrderStatus.IN_DELIVERY, OrderStatus.CANCELED],
-        [OrderStatus.PREPARING]: [OrderStatus.IN_DELIVERY, OrderStatus.CANCELED],
-        [OrderStatus.IN_DELIVERY]: [OrderStatus.DELIVERED, OrderStatus.CANCELED],
+        [OrderStatus.PENDING]: [
+          OrderStatus.ACCEPTED,
+          OrderStatus.REJECTED,
+          OrderStatus.CANCELED,
+        ],
+        [OrderStatus.ACCEPTED]: [
+          OrderStatus.PREPARING,
+          OrderStatus.IN_DELIVERY,
+          OrderStatus.CANCELED,
+        ],
+        [OrderStatus.PREPARING]: [
+          OrderStatus.IN_DELIVERY,
+          OrderStatus.CANCELED,
+        ],
+        [OrderStatus.IN_DELIVERY]: [
+          OrderStatus.DELIVERED,
+          OrderStatus.CANCELED,
+        ],
       },
       [UserRole.ADMIN]: {
         [OrderStatus.PENDING]: [
@@ -175,26 +226,50 @@ export class OrderService {
           OrderStatus.DELIVERED,
           OrderStatus.CANCELED,
         ],
-        [OrderStatus.ACCEPTED]: [OrderStatus.PREPARING, OrderStatus.IN_DELIVERY, OrderStatus.DELIVERED, OrderStatus.CANCELED],
-        [OrderStatus.PREPARING]: [OrderStatus.IN_DELIVERY, OrderStatus.DELIVERED, OrderStatus.CANCELED],
-        [OrderStatus.IN_DELIVERY]: [OrderStatus.DELIVERED, OrderStatus.CANCELED],
+        [OrderStatus.ACCEPTED]: [
+          OrderStatus.PREPARING,
+          OrderStatus.IN_DELIVERY,
+          OrderStatus.DELIVERED,
+          OrderStatus.CANCELED,
+        ],
+        [OrderStatus.PREPARING]: [
+          OrderStatus.IN_DELIVERY,
+          OrderStatus.DELIVERED,
+          OrderStatus.CANCELED,
+        ],
+        [OrderStatus.IN_DELIVERY]: [
+          OrderStatus.DELIVERED,
+          OrderStatus.CANCELED,
+        ],
       },
     };
-    const roleTransitions = allowedNext[user.type as UserRole];
+    const roleTransitions = allowedNext[user.type];
     if (!roleTransitions) {
       throw new ForbiddenException('Unauthorized type to update this order');
     }
     const allowed = roleTransitions[current] || [];
     if (!allowed.includes(next)) {
       if (user.type === UserRole.USER && next !== OrderStatus.CANCELED) {
-        throw new ForbiddenException('Users can only cancel their pending orders');
+        throw new ForbiddenException(
+          'Users can only cancel their pending orders',
+        );
       }
       if (user.type === UserRole.PHARMACIST) {
         if (next === OrderStatus.ACCEPTED || next === OrderStatus.REJECTED) {
-          throw new ConflictException('Order cannot be accepted or rejected at this stage');
+          throw new ConflictException(
+            'Order cannot be accepted or rejected at this stage',
+          );
         }
-        if ([OrderStatus.PREPARING, OrderStatus.IN_DELIVERY, OrderStatus.DELIVERED].includes(next)) {
-          throw new ConflictException('Order must be accepted first before moving to the next stages');
+        if (
+          [
+            OrderStatus.PREPARING,
+            OrderStatus.IN_DELIVERY,
+            OrderStatus.DELIVERED,
+          ].includes(next)
+        ) {
+          throw new ConflictException(
+            'Order must be accepted first before moving to the next stages',
+          );
         }
         if (next === OrderStatus.CANCELED) {
           throw new ConflictException('Cannot cancel order at this stage');
@@ -205,8 +280,15 @@ export class OrderService {
     }
   }
 
-  async updateOrderStatus(orderId: string, newStatus: OrderStatus, user: User): Promise<Order> {
-    const order = await this.orderRepo.findOne({ where: { id: orderId }, relations: ['user', 'pharmacy'] });
+  async updateOrderStatus(
+    orderId: string,
+    newStatus: OrderStatus,
+    user: User,
+  ): Promise<Order> {
+    const order = await this.orderRepo.findOne({
+      where: { id: orderId },
+      relations: ['user', 'pharmacy'],
+    });
     if (!order) throw new NotFoundException('Order not found');
     await this.assertCanAccessOrder(order, user);
     const validStatuses: OrderStatus[] = [
@@ -227,7 +309,10 @@ export class OrderService {
   }
 
   async findOrdersForPharmacy(userId: string) {
-    const pharmacy = await this.pharmacyRepo.findOne({ where: { user: { id: userId } }, relations: ['user'] });
+    const pharmacy = await this.pharmacyRepo.findOne({
+      where: { user: { id: userId } },
+      relations: ['user'],
+    });
     if (!pharmacy) throw new ForbiddenException('Unauthorized access');
     return this.orderRepo.find({
       where: { pharmacy: { id: pharmacy.id } },
@@ -242,7 +327,7 @@ export class OrderService {
       relations: ['pharmacy'],
       order: { createdAt: 'DESC' },
     });
-    return orders.map(order => ({
+    return orders.map((order) => ({
       orderId: order.id,
       pharmacyId: order.pharmacy?.id,
       pharmacyName: order.pharmacy?.name,
@@ -251,29 +336,6 @@ export class OrderService {
       createdAt: order.createdAt,
       totalPrice: order.totalPrice,
     }));
-  }
-
-  private async assertCanAccessOrder(order: Order, user: User) {
-    if (user.type === UserRole.ADMIN) return;
-
-    if (user.type === UserRole.USER) {
-      if (order.user.id !== user.id) {
-        throw new ForbiddenException('You can only access your own orders');
-      }
-      return;
-    }
-
-    if (user.type === UserRole.PHARMACIST) {
-      // Find the pharmacy associated with this pharmacist
-      const pharmacy = await this.pharmacyRepo.findOne({ where: { user: { id: user.id } } });
-      
-      if (!pharmacy || order.pharmacy.id !== pharmacy.id) {
-        throw new ForbiddenException('You can only access orders for your pharmacy');
-      }
-      return;
-    }
-    
-    throw new ForbiddenException('Unauthorized access to order');
   }
 
   async findOrderDetails(orderId: string, user: User) {
@@ -289,11 +351,17 @@ export class OrderService {
   }
 
   async rateExistingOrder(orderId: string, userId: string, dto: RateOrderDto) {
-    const order = await this.orderRepo.findOne({ where: { id: orderId }, relations: ['user', 'pharmacy'] });
+    const order = await this.orderRepo.findOne({
+      where: { id: orderId },
+      relations: ['user', 'pharmacy'],
+    });
     if (!order) throw new NotFoundException('Order not found');
-    if (order.user.id !== userId) throw new ForbiddenException('Unauthorized to rate this order');
-    if (order.status !== OrderStatus.DELIVERED) throw new ConflictException('You can only rate delivered orders');
-    if (order.ratingScore) throw new ConflictException('Order has already been rated');
+    if (order.user.id !== userId)
+      throw new ForbiddenException('Unauthorized to rate this order');
+    if (order.status !== OrderStatus.DELIVERED)
+      throw new ConflictException('You can only rate delivered orders');
+    if (order.ratingScore)
+      throw new ConflictException('Order has already been rated');
     order.ratingScore = dto.rating;
     order.ratingComment = dto.comment || null;
     await this.orderRepo.save(order);

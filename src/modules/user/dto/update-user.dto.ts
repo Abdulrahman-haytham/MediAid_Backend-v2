@@ -1,12 +1,19 @@
 import { PartialType } from '@nestjs/mapped-types';
-import { IsOptional, IsString, MinLength, ValidateNested, IsArray, IsNumber } from 'class-validator';
+import {
+  IsOptional,
+  IsString,
+  MinLength,
+  ValidateNested,
+  IsArray,
+  IsNumber,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { CreateUserDto } from './create-user.dto';
 
 class UpdateLocationCoordinatesDto {
   @IsArray()
   @IsNumber({}, { each: true })
-  coordinates?: number[];
+  coordinates: number[];
 }
 
 export class UpdateUserDto extends PartialType(CreateUserDto) {

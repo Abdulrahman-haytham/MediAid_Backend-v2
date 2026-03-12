@@ -1,8 +1,13 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ChatMessage } from './entities/chat-message.entity';
 import { SendMessageDto } from './dto/send-message.dto';
+import { CreateMessageDto } from './dto/create-message.dto';
 import { User } from '../user/user.entity';
 import { Order } from '../order/entities/order.entity';
 
@@ -14,6 +19,34 @@ export class ChatService {
     @InjectRepository(Order)
     private orderRepo: Repository<Order>,
   ) {}
+
+  async create(userId: string, dto: CreateMessageDto) {
+    const order = await this.orderRepo.findOne({
+      where: { id: dto.orderId },
+      relations: ['user', 'pharmacy', 'pharmacy.user'],
+    });
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    const isCustomer = order.user.id === userId;
+    const isPharmacist = order.pharmacy.user.id === userId;
+
+    if (!isCustomer && !isPharmacist) {
+      throw new ForbiddenException(
+        'You are not authorized to send messages in this order',
+      );
+    }
+
+    const message = this.chatRepo.create({
+      order,
+      sender: { id: userId } as User,
+      content: dto.content,
+    });
+
+    return await this.chatRepo.save(message);
+  }
 
   async sendMessage(user: User, dto: SendMessageDto) {
     const order = await this.orderRepo.findOne({
@@ -30,7 +63,9 @@ export class ChatService {
     const isPharmacist = order.pharmacy.user.id === user.id;
 
     if (!isCustomer && !isPharmacist) {
-      throw new ForbiddenException('You are not authorized to send messages in this order');
+      throw new ForbiddenException(
+        'You are not authorized to send messages in this order',
+      );
     }
 
     const message = this.chatRepo.create({
@@ -57,7 +92,9 @@ export class ChatService {
     const isPharmacist = order.pharmacy.user.id === user.id;
 
     if (!isCustomer && !isPharmacist) {
-      throw new ForbiddenException('You are not authorized to view messages for this order');
+      throw new ForbiddenException(
+        'You are not authorized to view messages for this order',
+      );
     }
 
     return await this.chatRepo.find({
