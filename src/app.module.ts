@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD, APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 import * as Joi from 'joi';
+import { join } from 'path';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { UserModule } from './modules/user/user.module';
@@ -29,6 +30,7 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
       isGlobal: true,
       envFilePath: '.env',
       validationSchema: Joi.object({
+        NODE_ENV: Joi.string().optional(),
         DATABASE_URL: Joi.string().required(),
         JWT_SECRET: Joi.string().required(),
         CLOUDINARY_CLOUD_NAME: Joi.string().required(),
@@ -38,7 +40,8 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
         SMTP_PORT: Joi.number().default(587),
         SMTP_USER: Joi.string().required(),
         SMTP_PASS: Joi.string().required(),
-        DB_SYNCHRONIZE: Joi.boolean().default(false),
+        DB_SSL: Joi.boolean().default(false),
+        DB_SYNCHRONIZE: Joi.boolean().default(true),
       }),
     }),
     ThrottlerModule.forRoot([
@@ -50,12 +53,22 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
-        type: 'postgres',
-        url: configService.get<string>('DATABASE_URL'),
-        autoLoadEntities: true,
-        synchronize: configService.get<boolean>('DB_SYNCHRONIZE') === true,
-      }),
+      useFactory: (configService: ConfigService) => {
+        const nodeEnv = configService.get<string>('NODE_ENV');
+        const sslEnabled =
+          configService.get<boolean>('DB_SSL') === true || nodeEnv === 'production';
+
+        return {
+          type: 'postgres',
+          url: configService.get<string>('DATABASE_URL'),
+          ssl: sslEnabled ? { rejectUnauthorized: false } : undefined,
+          autoLoadEntities: true,
+          entities: [join(__dirname, '**', '*.entity.js')],
+          migrations: [join(__dirname, 'migrations', '*.js')],
+          migrationsRun: true,
+          synchronize: configService.get<boolean>('DB_SYNCHRONIZE') !== false,
+        };
+      },
     }),
     UserModule,
     AuthModule,
