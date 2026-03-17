@@ -65,8 +65,11 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
           autoLoadEntities: true,
           entities: [join(__dirname, '**', '*.entity.js')],
           migrations: [join(__dirname, 'migrations', '*.js')],
-          migrationsRun: true,
-          synchronize: configService.get<boolean>('DB_SYNCHRONIZE') !== false,
+          migrationsRun: false,
+          // Temporary for initial Render deployments on a fresh DB:
+          // Some migrations ALTER existing tables (e.g., cart_items) and fail when tables don't exist yet.
+          // Enable synchronize to auto-create tables now, then disable it later and rely on proper migrations.
+          synchronize: true,
         };
       },
     }),
