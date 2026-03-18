@@ -16,22 +16,9 @@ async function bootstrap() {
   app.use(helmet());
   app.use(compression());
 
-  const corsOrigins = (process.env.CORS_ORIGINS || 'http://localhost:5173')
-    .split(',')
-    .map((o) => o.trim())
-    .filter(Boolean);
-
   app.enableCors({
-    origin: (origin, callback) => {
-      if (!origin) return callback(null, true);
-      if (corsOrigins.includes('*') || corsOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-      return callback(new Error('Not allowed by CORS'), false);
-    },
-    credentials: false,
-    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    origin: true,
+    credentials: true,
   });
 
   const config = new DocumentBuilder()
