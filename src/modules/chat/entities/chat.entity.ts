@@ -1,16 +1,14 @@
 import {
   Entity,
   PrimaryGeneratedColumn,
-  Column,
   CreateDateColumn,
   UpdateDateColumn,
   OneToOne,
   OneToMany,
-  ManyToOne,
   JoinColumn,
 } from 'typeorm';
 import { Order } from '../../order/entities/order.entity';
-import { User } from '../../user/user.entity';
+import { ChatMessage } from './chat-message.entity';
 
 @Entity('chats')
 export class Chat {
@@ -21,7 +19,9 @@ export class Chat {
   @JoinColumn()
   order: Order;
 
-  @OneToMany(() => ChatMessage, (message) => message.chat, { cascade: true })
+  // chat_messages يتم ربطها بـ order مباشرةً (بدون علاقة chat-foreign-key)،
+  // لذا نستخدم رسالة.order كـ inverse side.
+  @OneToMany(() => ChatMessage, (message) => message.order, { cascade: true })
   messages: ChatMessage[];
 
   @CreateDateColumn()
@@ -29,28 +29,4 @@ export class Chat {
 
   @UpdateDateColumn()
   updatedAt: Date;
-}
-
-@Entity('chat_messages')
-export class ChatMessage {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
-
-  @ManyToOne(() => Chat, (chat) => chat.messages, {
-    onDelete: 'CASCADE',
-    nullable: false,
-  })
-  chat: Chat;
-
-  @ManyToOne(() => User, { nullable: false, eager: true })
-  sender: User;
-
-  @Column({ type: 'text' })
-  content: string;
-
-  @Column({ type: 'varchar', nullable: true })
-  imageUrl: string;
-
-  @CreateDateColumn()
-  createdAt: Date;
 }

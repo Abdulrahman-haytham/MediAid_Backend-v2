@@ -12,6 +12,7 @@ import { UseGuards } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ChatService } from './chat.service';
 import { CreateMessageDto } from './dto/create-message.dto';
+import { validate as uuidValidate } from 'uuid';
 
 @WebSocketGateway({
   cors: {
@@ -63,27 +64,40 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return { error: 'Unauthorized' };
     }
 
-    const message = await this.chatService.create(user.sub, createMessageDto);
+    try {
+      const message = await this.chatService.create(user.sub, createMessageDto);
 
-    // Notify the recipient (Pharmacy or User)
-    // Assuming the order links a user and a pharmacy
-    // We can emit to a room specific to the order: `order_${orderId}`
+      // Notify the recipient (Pharmacy or User)
+      // The orderId maps to: order_{orderId}
+      this.server
+        .to(`order_${createMessageDto.orderId}`)
+        .emit('newMessage', message);
 
-    this.server
-      .to(`order_${createMessageDto.orderId}`)
-      .emit('newMessage', message);
-
-    return message;
+      return message;
+    } catch (err: any) {
+      return { error: err?.message ?? 'Failed to send message' };
+    }
   }
 
   @SubscribeMessage('joinOrderRoom')
-  handleJoinOrderRoom(
+  async handleJoinOrderRoom(
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { orderId: string },
   ) {
-    // TODO: Verify user has access to this order before joining
-    client.join(`order_${data.orderId}`);
-    return { event: 'joinedOrderRoom', orderId: data.orderId };
+    const user = client.data.user;
+    if (!user) {
+      return { error: 'Unauthorized' };
+    }
+
+    const { orderId } = data ?? {};
+    if (!orderId || !uuidValidate(orderId)) {
+      return { error: 'Invalid orderId' };
+    }
+
+    await this.chatService.assertUserCanAccessOrder(user.sub, orderId);
+    client.join(`order_${orderId}`);
+
+    return { event: 'joinedOrderRoom', orderId };
   }
 
   private extractToken(client: Socket): string | undefined {

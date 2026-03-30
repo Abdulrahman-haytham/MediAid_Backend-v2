@@ -31,7 +31,12 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
       envFilePath: '.env',
       validationSchema: Joi.object({
         NODE_ENV: Joi.string().optional(),
-        DATABASE_URL: Joi.string().required(),
+        DATABASE_URL: Joi.string().optional(),
+        DB_HOST: Joi.string().optional(),
+        DB_PORT: Joi.number().optional(),
+        DB_USER: Joi.string().optional(),
+        DB_PASS: Joi.string().optional(),
+        DB_NAME: Joi.string().optional(),
         JWT_SECRET: Joi.string().required(),
         CLOUDINARY_CLOUD_NAME: Joi.string().required(),
         CLOUDINARY_API_KEY: Joi.string().required(),
@@ -41,7 +46,8 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
         SMTP_USER: Joi.string().required(),
         SMTP_PASS: Joi.string().required(),
         DB_SSL: Joi.boolean().default(false),
-        DB_SYNCHRONIZE: Joi.boolean().default(true),
+        // synchronize يجب أن يبقى false في production حتى لا يحدث drift.
+        DB_SYNCHRONIZE: Joi.boolean().default(false),
       }),
     }),
     ThrottlerModule.forRoot([
@@ -58,18 +64,39 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
         const sslEnabled =
           configService.get<boolean>('DB_SSL') === true || nodeEnv === 'production';
 
+        const databaseUrl = configService.get<string>('DATABASE_URL');
+        let url = databaseUrl;
+        if (!url) {
+          const host = configService.get<string>('DB_HOST');
+          const port = configService.get<number>('DB_PORT');
+          const username = configService.get<string>('DB_USER');
+          const password = configService.get<string>('DB_PASS');
+          const database = configService.get<string>('DB_NAME');
+
+          if (!host || !port || !username || !password || !database) {
+            throw new Error(
+              'Missing database connection settings. Provide DATABASE_URL or DB_HOST/DB_PORT/DB_USER/DB_PASS/DB_NAME.',
+            );
+          }
+
+          url = `postgresql://${encodeURIComponent(
+            username,
+          )}:${encodeURIComponent(password)}@${host}:${port}/${database}`;
+        }
+
+        const synchronizeEnabled =
+          configService.get<boolean>('DB_SYNCHRONIZE') === true &&
+          nodeEnv !== 'production';
+
         return {
           type: 'postgres',
-          url: configService.get<string>('DATABASE_URL'),
+          url,
           ssl: sslEnabled ? { rejectUnauthorized: false } : undefined,
           autoLoadEntities: true,
           entities: [join(__dirname, '**', '*.entity.js')],
           migrations: [join(__dirname, 'migrations', '*.js')],
           migrationsRun: false,
-          // Temporary for initial Render deployments on a fresh DB:
-          // Some migrations ALTER existing tables (e.g., cart_items) and fail when tables don't exist yet.
-          // Enable synchronize to auto-create tables now, then disable it later and rely on proper migrations.
-          synchronize: true,
+          synchronize: synchronizeEnabled,
         };
       },
     }),

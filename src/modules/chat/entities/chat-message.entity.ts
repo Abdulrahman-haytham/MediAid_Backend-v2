@@ -22,6 +22,9 @@ export class ChatMessage {
   @Column({ type: 'text' })
   content: string;
 
+  @Column({ type: 'varchar', nullable: true })
+  imageUrl?: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 }

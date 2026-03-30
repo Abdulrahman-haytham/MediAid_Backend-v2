@@ -20,6 +20,26 @@ export class ChatService {
     private orderRepo: Repository<Order>,
   ) {}
 
+  async assertUserCanAccessOrder(userId: string, orderId: string) {
+    const order = await this.orderRepo.findOne({
+      where: { id: orderId },
+      relations: ['user', 'pharmacy', 'pharmacy.user'],
+    });
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    const isCustomer = order.user.id === userId;
+    const isPharmacist = order.pharmacy.user.id === userId;
+
+    if (!isCustomer && !isPharmacist) {
+      throw new ForbiddenException(
+        'You are not authorized to access this order chat',
+      );
+    }
+  }
+
   async create(userId: string, dto: CreateMessageDto) {
     const order = await this.orderRepo.findOne({
       where: { id: dto.orderId },
@@ -43,6 +63,7 @@ export class ChatService {
       order,
       sender: { id: userId } as User,
       content: dto.content,
+      imageUrl: dto.imageUrl ?? null,
     });
 
     return await this.chatRepo.save(message);

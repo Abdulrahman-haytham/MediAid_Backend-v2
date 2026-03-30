@@ -7,7 +7,26 @@ import { join } from 'path';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
-  url: process.env.DATABASE_URL,
+  url: (() => {
+    const directUrl = process.env.DATABASE_URL;
+    if (directUrl) return directUrl;
+
+    const host = process.env.DB_HOST;
+    const port = process.env.DB_PORT;
+    const username = process.env.DB_USER;
+    const password = process.env.DB_PASS;
+    const database = process.env.DB_NAME;
+
+    if (!host || !port || !username || !password || !database) {
+      throw new Error(
+        'Missing database connection settings. Provide DATABASE_URL or DB_HOST/DB_PORT/DB_USER/DB_PASS/DB_NAME.',
+      );
+    }
+
+    return `postgresql://${encodeURIComponent(
+      username,
+    )}:${encodeURIComponent(password)}@${host}:${port}/${database}`;
+  })(),
   ssl:
     process.env.DB_SSL === 'true' || process.env.NODE_ENV === 'production'
       ? { rejectUnauthorized: false }
