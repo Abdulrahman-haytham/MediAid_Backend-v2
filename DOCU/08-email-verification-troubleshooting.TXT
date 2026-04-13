@@ -1,0 +1,272 @@
+================================================================================
+VERIFICATION CODE EMAIL - TROUBLESHOOTING GUIDE
+================================================================================
+Created: 2026-04-13
+Issue: Verification code email not sending during new user registration
+Status: FIXED (error handling improved)
+================================================================================
+
+PROBLEM DESCRIPTION
+-------------------
+When a user registers a new account, the verification code email may fail to 
+send. Previously, this failure was SILENT - registration succeeded but the 
+user never received the code and had no indication of the problem.
+
+
+================================================================================
+ROOT CAUSE ANALYSIS
+================================================================================
+
+The mail service had the following issues:
+
+1. SILENT FAILURE DESIGN
+   - sendVerificationEmail() caught errors but NEVER threw them
+   - Registration completed successfully even if email failed
+   - User received no error message
+   - User couldn't verify account (no code received)
+
+2. POSSIBLE SMTP CONFIGURATION ISSUES
+   Current settings in .env:
+   - SMTP_HOST=smtp.gmail.com
+   - SMTP_PORT=587
+   - SMTP_USER=hakeem515kom@gmail.com
+   - SMTP_PASS=wbikdqqghpvbidza (Gmail App Password)
+
+   Potential problems:
+   a) App Password expired or revoked
+   b) Google account security settings blocking access
+   c) Two-factor authentication changes
+   d) Gmail API access disabled
+
+
+================================================================================
+WHAT WAS FIXED
+================================================================================
+
+File: src/modules/mail/mail.service.ts
+
+BEFORE:
+-------
+- Email sends with 3 retry attempts (initial + 2 retries)
+- 2-second delay between retries
+- After all retries fail: LOGS ERROR BUT DOESN'T THROW
+- Registration continues even if email fails completely
+
+AFTER:
+------
+- Email sends with 3 retry attempts (initial + 2 retries)
+- 2-second delay between retries
+- After all retries fail: THROWS ERROR with details
+- Registration FAILS if email cannot be sent
+- User sees clear error message: "Failed to send verification email"
+
+
+================================================================================
+HOW TO TEST IF EMAIL IS WORKING
+================================================================================
+
+STEP 1: Verify SMTP Credentials
+---------------------------------
+1. Go to your Google Account: https://myaccount.google.com
+2. Security → 2-Step Verification → App Passwords
+3. Check if the app password ending in "wbikdqqghpvbidza" is still valid
+4. If expired/revoked, generate a new one:
+   - Click "App passwords"
+   - Select "Mail" and your device
+   - Copy the 16-character password
+   - Update .env file: SMTP_PASS=new_password
+
+STEP 2: Test Email Manually
+-----------------------------
+Create a test script (test-email.js):
+
+```javascript
+const nodemailer = require('nodemailer');
+
+const transporter = nodemailer.createTransport({
+  host: 'smtp.gmail.com',
+  port: 587,
+  secure: false,
+  auth: {
+    user: 'hakeem515kom@gmail.com',
+    pass: 'wbikdqqghpvbidza', // Replace with current app password
+  },
+});
+
+transporter.verify((error, success) => {
+  if (error) {
+    console.log('❌ SMTP Connection Failed:', error.message);
+  } else {
+    console.log('✅ SMTP Connection Successful');
+  }
+});
+
+transporter.sendMail({
+  from: '"Test" <hakeem515kom@gmail.com>',
+  to: 'YOUR_TEST_EMAIL@example.com', // Replace with your email
+  subject: 'Test Email',
+  text: 'This is a test email from MediAid backend',
+}, (error, info) => {
+  if (error) {
+    console.log('❌ Email Send Failed:', error.message);
+  } else {
+    console.log('✅ Email Sent Successfully! Message ID:', info.messageId);
+  }
+  process.exit(0);
+});
+```
+
+Run: node test-email.js
+
+STEP 3: Check Application Logs
+-------------------------------
+When registration is attempted, check the console/logs for:
+
+✅ SUCCESS LOGS:
+```
+[Nest] ... [MailService] Verification email sent to user@example.com
+```
+
+❌ FAILURE LOGS (NEW - will now throw error):
+```
+[Nest] ... [MailService] Failed to send verification email to user@example.com (attempt 1/3)
+[Nest] ... [MailService] Failed to send verification email to user@example.com (attempt 2/3)
+[Nest] ... [MailService] Failed to send verification email to user@example.com (attempt 3/3)
+[Nest] ... [MailService] Failed to send verification email to user@example.com after 3 attempts
+```
+
+Common error messages:
+- "Invalid login" → App Password is wrong/expired
+- "Connection timeout" → SMTP_HOST/PORT incorrect or firewall blocking
+- "Authentication failed" → Credentials incorrect
+- "Connection refused" → Network/SMTP server issue
+
+
+================================================================================
+COMMON SMTP ERRORS & SOLUTIONS
+================================================================================
+
+Error: "Invalid login: 535-5.7.8 Username and Password not accepted"
+Solution: 
+  1. Generate new Gmail App Password
+  2. Update .env: SMTP_PASS=new_password
+  3. Restart application
+
+Error: "connect ETIMEDOUT 74.125.x.x:587"
+Solution:
+  1. Check firewall settings
+  2. Verify SMTP_HOST=smtp.gmail.com
+  3. Try alternative port: SMTP_PORT=465 (with secure: true)
+
+Error: "getaddrinfo ENOTFOUND smtp.gmail.com"
+Solution:
+  1. Check internet connection
+  2. Verify DNS resolution
+  3. Check network proxy settings
+
+Error: "Self-signed certificate" or "UNABLE_TO_VERIFY_LEAF_SIGNATURE"
+Solution:
+  Add to mail.service.ts transporter config:
+  tls: {
+    rejectUnauthorized: false
+  }
+
+
+================================================================================
+ALTERNATIVE SMTP PROVIDERS
+================================================================================
+
+If Gmail continues to have issues, consider:
+
+1. SendGrid (Recommended for production)
+   - Free tier: 100 emails/day
+   - Setup: https://sendgrid.com
+   - Config:
+     SMTP_HOST=smtp.sendgrid.net
+     SMTP_PORT=587
+     SMTP_USER=apikey
+     SMTP_PASS=your_sendgrid_api_key
+
+2. Mailgun
+   - Free tier: 5,000 emails/month
+   - Setup: https://mailgun.com
+   - Config:
+     SMTP_HOST=smtp.mailgun.org
+     SMTP_PORT=587
+     SMTP_USER=postmaster@yourdomain.com
+     SMTP_PASS=your_mailgun_password
+
+3. Resend
+   - Free tier: 3,000 emails/month
+   - Setup: https://resend.com
+   - Config: Use their API instead of SMTP
+
+
+================================================================================
+VERIFICATION CODE FLOW (AFTER FIX)
+================================================================================
+
+1. User calls: POST /users/register
+2. Backend creates user with verification code
+3. Backend attempts to send email
+4. If email SUCCESS:
+   - User receives 6-digit code
+   - Registration returns success (201)
+   - User can verify with: POST /auth/verify-email
+5. If email FAILS (after 3 retries):
+   - Registration returns error (500)
+   - User is NOT created in database (transaction rollback needed)
+   - Client sees: "Failed to send verification email: [error details]"
+   - User can retry registration later
+
+
+================================================================================
+REMAINING ISSUES & IMPROVEMENTS
+================================================================================
+
+1. NO TRANSACTION ROLLBACK
+   Current behavior: If email fails, user is already created in DB
+   Recommended: Wrap registration in transaction, rollback on email failure
+
+2. NO RESEND MECHANISM
+   Current behavior: User must re-register to get new code
+   Recommended: Add POST /auth/resend-code endpoint
+
+3. VERIFICATION CODE NEVER EXPIRES
+   Current behavior: Code valid indefinitely
+   Recommended: Add expiration (e.g., 24 hours)
+
+4. RATE LIMITING ON VERIFICATION
+   Current behavior: 6-digit code (1M combinations), throttle 5/min
+   Recommended: Lock account after X failed attempts
+
+5. VERIFICATION CODE IN PLAINTEXT
+   Current behavior: Stored as-is in database
+   Recommended: Hash like password reset tokens (see requestPasswordReset)
+
+
+================================================================================
+QUICK FIX CHECKLIST
+================================================================================
+
+□ Step 1: Verify Gmail App Password is still valid
+□ Step 2: Run test-email.js script to confirm SMTP works
+□ Step 3: Check application logs for error messages
+□ Step 4: Try registering a new test account
+□ Step 5: Verify email is received with 6-digit code
+□ Step 6: Verify code works with POST /auth/verify-email
+
+
+================================================================================
+FILES MODIFIED
+================================================================================
+
+1. src/modules/mail/mail.service.ts
+   - sendVerificationEmail() now throws error on complete failure
+   - sendPasswordResetEmail() now throws error on complete failure
+   - Both methods still retry 3 times with 2-second delays
+
+
+================================================================================
+END OF DOCUMENT
+================================================================================

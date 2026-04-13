@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD, APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
+import { TerminusModule, HealthCheckService, TypeOrmHealthIndicator } from '@nestjs/terminus';
 import * as Joi from 'joi';
 import { join } from 'path';
 import { AppController } from './app.controller';
@@ -20,7 +21,6 @@ import { KafuPostModule } from './modules/kafuPost/kafuPost.module';
 import { UploadModule } from './modules/upload/upload.module';
 import { EmergencyOrderModule } from './modules/emergencyOrder/emergencyOrder.module';
 import { ChatModule } from './modules/chat/chat.module';
-import { OrderTimeoutJob } from './common/jobs/order-timeout.job';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 
@@ -62,7 +62,8 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
       useFactory: (configService: ConfigService) => {
         const nodeEnv = configService.get<string>('NODE_ENV');
         const sslEnabled =
-          configService.get<boolean>('DB_SSL') === true || nodeEnv === 'production';
+          configService.get<boolean>('DB_SSL') === true ||
+          nodeEnv === 'production';
 
         const databaseUrl = configService.get<string>('DATABASE_URL');
         let url = databaseUrl;
@@ -113,11 +114,11 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
     UploadModule,
     EmergencyOrderModule,
     ChatModule,
+    TerminusModule,
   ],
   controllers: [AppController],
   providers: [
     AppService,
-    OrderTimeoutJob,
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,

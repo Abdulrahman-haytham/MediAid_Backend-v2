@@ -23,6 +23,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (!user) {
       throw new UnauthorizedException();
     }
+    
+    // Check if token version matches (for token revocation support)
+    if (payload.tokenVersion !== user.tokenVersion) {
+      throw new UnauthorizedException('Token has been revoked');
+    }
+    
     // هذا الكائن سيتم تخزينه في req.user
     return user;
   }

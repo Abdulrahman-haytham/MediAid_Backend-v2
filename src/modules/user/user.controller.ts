@@ -11,7 +11,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { Throttle } from '@nestjs/throttler';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -26,6 +26,7 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { User, UserRole } from './user.entity';
 import { UserService } from './user.service';
+import { IsString, IsOptional } from 'class-validator';
 
 @ApiTags('Users')
 @UseInterceptors(ClassSerializerInterceptor)
@@ -37,6 +38,7 @@ export class UserController {
   @ApiResponse({ status: 201, description: 'User successfully registered' })
   @ApiResponse({ status: 400, description: 'Validation error' })
   @ApiResponse({ status: 409, description: 'Email or username already exists' })
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('register')
   register(@Body() createUserDto: CreateUserDto) {
     return this.userService.register(createUserDto);
@@ -103,5 +105,17 @@ export class UserController {
   @Delete(':id')
   remove(@Param('id') id: string, @CurrentUser() currentUser: User) {
     return this.userService.remove(id, currentUser);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard('jwt'))
+  @ApiOperation({ summary: 'Update FCM token for push notifications' })
+  @ApiResponse({ status: 200, description: 'FCM token updated' })
+  @Patch('me/fcm-token')
+  updateFcmToken(
+    @CurrentUser() currentUser: User,
+    @Body() body: { fcmToken: string },
+  ) {
+    return this.userService.updateFcmToken(currentUser.id, body.fcmToken);
   }
 }

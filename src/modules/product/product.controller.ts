@@ -16,10 +16,12 @@ import {
   ApiOperation,
   ApiBearerAuth,
   ApiQuery,
+  ApiResponse,
 } from '@nestjs/swagger';
 import { ProductService } from './product.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
+import { SearchProductsByLocationDto } from './dto/search-products-by-location.dto';
 import { User } from '../user/user.entity';
 import { Roles } from '../../common/guards/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -113,6 +115,74 @@ export class ProductController {
       results: products.length,
       data: products,
       message: 'تم العثور على المنتجات بنجاح',
+    };
+  }
+
+  @ApiOperation({
+    summary: 'Search products by location with pharmacy availability',
+    description:
+      'Searches for a product by name within a geographic radius, ' +
+      'finds which nearby pharmacies have it in stock, and returns ' +
+      'alternative products from the same sub_category. ' +
+      'Uses PostGIS for accurate distance calculations. Default radius: 500km.',
+  })
+  @ApiQuery({
+    name: 'productName',
+    type: String,
+    required: true,
+    description: 'Product name to search for (partial match)',
+    example: 'Panadol',
+  })
+  @ApiQuery({
+    name: 'lon',
+    type: Number,
+    required: true,
+    description: 'Longitude coordinate (GeoJSON order)',
+    example: 31.2357,
+  })
+  @ApiQuery({
+    name: 'lat',
+    type: Number,
+    required: true,
+    description: 'Latitude coordinate (GeoJSON order)',
+    example: 30.0444,
+  })
+  @ApiQuery({
+    name: 'radius',
+    type: Number,
+    required: false,
+    description: 'Search radius in meters (default: 500000 = 500km)',
+    example: 500000,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Products found with nearby pharmacy availability',
+  })
+  @Get('search-nearby')
+  async searchNearby(@Query() query: SearchProductsByLocationDto) {
+    const result = await this.productService.searchProductsByLocation(
+      query.productName,
+      query.lon,
+      query.lat,
+      query.radius ?? 500000,
+    );
+
+    if (!result.mainProduct && result.alternatives.length === 0) {
+      return {
+        success: false,
+        message: `No pharmacies found with "${query.productName}" within ${query.radius ?? 500000}m`,
+        mainProduct: null,
+        alternatives: [],
+        totalResults: 0,
+      };
+    }
+
+    return {
+      success: true,
+      message: `Found ${result.totalResults} product(s) with nearby availability`,
+      mainProduct: result.mainProduct,
+      alternatives: result.alternatives,
+      totalResults: result.totalResults,
     };
   }
 

@@ -5,15 +5,17 @@ import {
   Param,
   Post,
   Put,
+  Patch,
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { Roles } from '../../../common/guards/roles.decorator';
 import { RolesGuard } from '../../../common/guards/roles.guard';
 import { User, UserRole } from '../../user/user.entity';
 import { CreateOrderDto } from '../dto/create-order.dto';
+import { CreateOrderReviewDto } from '../dto/create-order-review.dto';
 import { RateOrderDto, UpdateOrderStatusDto } from '../dto/update-order.dto';
 import { OrderService } from '../services/order.service';
 
@@ -108,5 +110,38 @@ export class OrderController {
       rating: { score: order.ratingScore, comment: order.ratingComment },
       pharmacy: order.pharmacy?.name || 'Unknown Pharmacy',
     };
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard('jwt'))
+  @ApiOperation({ summary: 'Submit a detailed review for an order' })
+  @ApiResponse({ status: 201, description: 'Review created' })
+  @ApiResponse({ status: 400, description: 'Order not delivered or already reviewed' })
+  @Post(':orderId/review')
+  async submitReview(
+    @CurrentUser() currentUser: User,
+    @Param('orderId') orderId: string,
+    @Body() dto: CreateOrderReviewDto,
+  ) {
+    return this.orderService.submitOrderReview(orderId, currentUser, dto);
+  }
+
+  @ApiOperation({ summary: 'Get reviews for a pharmacy' })
+  @Get('pharmacy/:pharmacyId/reviews')
+  async getPharmacyReviews(@Param('pharmacyId') pharmacyId: string) {
+    return this.orderService.getPharmacyReviews(pharmacyId);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard('jwt'))
+  @ApiOperation({ summary: 'Cancel order by user (pending orders only)' })
+  @ApiResponse({ status: 200, description: 'Order canceled successfully' })
+  @ApiResponse({ status: 400, description: 'Order cannot be canceled' })
+  @Patch(':orderId/cancel')
+  async cancelOrderByUser(
+    @CurrentUser() currentUser: User,
+    @Param('orderId') orderId: string,
+  ) {
+    return this.orderService.cancelOrderByUser(orderId, currentUser);
   }
 }

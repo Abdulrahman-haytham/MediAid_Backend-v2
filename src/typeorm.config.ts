@@ -2,10 +2,12 @@ import 'dotenv/config';
 import { DataSource } from 'typeorm';
 import { join } from 'path';
 
+// Note: This file is compiled to CommonJS by nest build,
+// so __dirname is available and works correctly.
+
 // Standalone TypeORM DataSource for CLI migrations (does NOT depend on Nest DI)
 // Uses the same env vars as AppModule (see app.module.ts)
-
-export const AppDataSource = new DataSource({
+const AppDataSource = new DataSource({
   type: 'postgres',
   url: (() => {
     const directUrl = process.env.DATABASE_URL;
@@ -32,6 +34,8 @@ export const AppDataSource = new DataSource({
       ? { rejectUnauthorized: false }
       : undefined,
 
+  // Paths for compiled .js files (after `pnpm run build`)
+  // When running from source (dev), ts-node handles resolution automatically.
   entities: [join(__dirname, '**', '*.entity.js')],
   migrations: [join(__dirname, 'migrations', '*.js')],
   migrationsRun: false,

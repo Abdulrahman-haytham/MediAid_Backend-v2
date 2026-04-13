@@ -83,6 +83,12 @@ export class User {
   @Column({ type: 'timestamp', nullable: true })
   expiresAt: Date;
 
+  @Column({ type: 'int', default: 0 })
+  tokenVersion: number;
+
+  @Column({ type: 'varchar', nullable: true })
+  fcmToken: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

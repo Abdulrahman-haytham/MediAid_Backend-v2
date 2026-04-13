@@ -12,7 +12,6 @@ import { User, UserRole } from './user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import * as crypto from 'crypto';
-import * as bcrypt from 'bcryptjs';
 import { MailService } from '../mail/mail.service';
 
 @Injectable()
@@ -124,20 +123,26 @@ export class UserService {
 
     const user = await this.findOne(id);
 
-    if (updateUserDto.location) {
-      if (updateUserDto.location?.coordinates) {
-        user.latitude = updateUserDto.location.coordinates[0];
-        user.longitude = updateUserDto.location.coordinates[1];
+    // Prevent type escalation - strip type from DTO
+    const safeDto = { ...updateUserDto };
+    if ('type' in safeDto) {
+      delete (safeDto as any).type;
+    }
+
+    if (safeDto.location) {
+      if (safeDto.location?.coordinates) {
+        user.latitude = safeDto.location.coordinates[0];
+        user.longitude = safeDto.location.coordinates[1];
       }
-      delete updateUserDto.location;
+      delete (safeDto as any).location;
     }
 
-    if (updateUserDto.password) {
-      user.password = updateUserDto.password;
-      delete updateUserDto.password;
+    if (safeDto.password) {
+      user.password = safeDto.password;
+      delete (safeDto as any).password;
     }
 
-    Object.assign(user, updateUserDto);
+    Object.assign(user, safeDto);
     return await this.userRepository.save(user);
   }
 
@@ -185,9 +190,20 @@ export class UserService {
 
     if (!user) throw new BadRequestException('Invalid or expired token');
 
-    user.password = await bcrypt.hash(newPassword, 12);
+    user.password = newPassword;
     user.resetPasswordToken = null;
     user.resetPasswordExpires = null;
+    user.tokenVersion += 1; // Invalidate all existing tokens
     await this.userRepository.save(user);
+  }
+
+  async updateFcmToken(userId: string, fcmToken: string | null) {
+    await this.userRepository.update(userId, { fcmToken });
+    return { message: 'FCM token updated successfully' };
+  }
+
+  async updateSimple(userId: string, data: Partial<User>) {
+    await this.userRepository.update(userId, data);
+    return { message: 'User updated' };
   }
 }

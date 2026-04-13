@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -12,7 +13,9 @@ import {
   OrderStatus,
   OrderType,
 } from '../entities/order.entity';
+import { OrderReview } from '../entities/order-review.entity';
 import { CreateOrderDto } from '../dto/create-order.dto';
+import { CreateOrderReviewDto } from '../dto/create-order-review.dto';
 import { RateOrderDto } from '../dto/update-order.dto';
 import { User, UserRole } from '../../user/user.entity';
 import { Pharmacy } from '../../pharmacy/pharmacy.entity';
@@ -35,6 +38,8 @@ export class OrderService {
     @InjectRepository(Order) private readonly orderRepo: Repository<Order>,
     @InjectRepository(OrderItem)
     private readonly orderItemRepo: Repository<OrderItem>,
+    @InjectRepository(OrderReview)
+    private readonly orderReviewRepo: Repository<OrderReview>,
     @InjectRepository(Pharmacy)
     private readonly pharmacyRepo: Repository<Pharmacy>,
     @InjectRepository(Cart) private readonly cartRepo: Repository<Cart>,
@@ -67,7 +72,7 @@ export class OrderService {
 
   async createOrderFromCart(user: User, dto: CreateOrderDto): Promise<Order> {
     return this.orderRepo.manager.transaction(async (manager) => {
-      const { pharmacyName, orderType, deliveryAddress } = dto;
+      const { pharmacyName, orderType, deliveryAddress, prescriptionImageUrl } = dto;
       if (!pharmacyName || !orderType) {
         throw new ConflictException(
           'Pharmacy name and order type are required.',
@@ -78,6 +83,7 @@ export class OrderService {
           'Delivery address is required for delivery orders.',
         );
       }
+
       const pharmacySlug = simpleSlugify(pharmacyName);
       const pharmacyRepo = manager.getRepository(Pharmacy);
       const cartRepo = manager.getRepository(Cart);
@@ -85,19 +91,35 @@ export class OrderService {
       const pharmMedRepo = manager.getRepository(PharmacyMedicine);
       const orderRepo = manager.getRepository(Order);
       const orderItemRepo = manager.getRepository(OrderItem);
+
+      // Load cart
+      const cart = await cartRepo.findOne({
+        where: { user: { id: user.id } },
+        relations: ['items', 'items.product', 'items.pharmacy'],
+      });
+
+      if (!cart || !cart.items || cart.items.length === 0) {
+        throw new ConflictException('Your cart is empty.');
+      }
+
+      // Check if any product requires prescription
+      const hasPrescriptionProduct = cart.items.some(
+        (item) => item.product?.requiresPrescription,
+      );
+
+      if (hasPrescriptionProduct && !prescriptionImageUrl) {
+        throw new BadRequestException(
+          'One or more products require a prescription. Please provide prescriptionImageUrl.',
+        );
+      }
+
       const pharmacy = await pharmacyRepo.findOne({
         where: { slug: pharmacySlug },
       });
       if (!pharmacy) {
         throw new NotFoundException(`Pharmacy "${pharmacyName}" not found.`);
       }
-      const cart = await cartRepo.findOne({
-        where: { user: { id: user.id } },
-        relations: ['items', 'items.product', 'items.pharmacy'],
-      });
-      if (!cart || !cart.items || cart.items.length === 0) {
-        throw new ConflictException('Your cart is empty.');
-      }
+
       const validPharmacyItems: Array<{
         cartItemId: string;
         product: Product;
@@ -152,6 +174,7 @@ export class OrderService {
         orderType,
         deliveryAddress:
           orderType === OrderType.DELIVERY ? deliveryAddress : null,
+        prescriptionImageUrl: prescriptionImageUrl || null,
         status: OrderStatus.PENDING,
         totalPrice,
       });
@@ -287,7 +310,7 @@ export class OrderService {
   ): Promise<Order> {
     const order = await this.orderRepo.findOne({
       where: { id: orderId },
-      relations: ['user', 'pharmacy'],
+      relations: ['user', 'pharmacy', 'items', 'items.product'],
     });
     if (!order) throw new NotFoundException('Order not found');
     await this.assertCanAccessOrder(order, user);
@@ -303,9 +326,34 @@ export class OrderService {
       throw new ConflictException('Invalid status update');
     }
     this.validateStatusTransition(order.status, newStatus, user);
+
+    // Restore stock if order is canceled or rejected
+    if (newStatus === OrderStatus.CANCELED || newStatus === OrderStatus.REJECTED) {
+      await this.restoreOrderItemsStock(order);
+    }
+
     order.status = newStatus;
     await this.orderRepo.save(order);
     return order;
+  }
+
+  private async restoreOrderItemsStock(order: Order): Promise<void> {
+    for (const item of order.items) {
+      const stock = await this.orderRepo.manager
+        .getRepository(PharmacyMedicine)
+        .createQueryBuilder('pm')
+        .leftJoinAndSelect('pm.pharmacy', 'pharmacy')
+        .leftJoinAndSelect('pm.product', 'product')
+        .where('pharmacy.id = :pharmacyId', { pharmacyId: order.pharmacy.id })
+        .andWhere('product.id = :productId', { productId: item.product.id })
+        .setLock('pessimistic_write')
+        .getOne();
+
+      if (stock) {
+        stock.quantity += item.quantity;
+        await this.orderRepo.manager.save(PharmacyMedicine, stock);
+      }
+    }
   }
 
   async findOrdersForPharmacy(userId: string) {
@@ -366,5 +414,127 @@ export class OrderService {
     order.ratingComment = dto.comment || null;
     await this.orderRepo.save(order);
     return order;
+  }
+
+  async submitOrderReview(
+    orderId: string,
+    user: User,
+    dto: CreateOrderReviewDto,
+  ) {
+    // Find order with relations
+    const order = await this.orderRepo.findOne({
+      where: { id: orderId },
+      relations: ['user', 'pharmacy'],
+    });
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    // Verify ownership
+    if (order.user.id !== user.id) {
+      throw new ForbiddenException('Unauthorized to review this order');
+    }
+
+    // Verify order is delivered
+    if (order.status !== OrderStatus.DELIVERED) {
+      throw new BadRequestException('You can only review delivered orders');
+    }
+
+    // Check if review already exists
+    const existingReview = await this.orderReviewRepo.findOne({
+      where: { order: { id: orderId } },
+    });
+
+    if (existingReview) {
+      throw new ConflictException('Order has already been reviewed');
+    }
+
+    // Create review
+    const review = this.orderReviewRepo.create({
+      order,
+      orderId: order.id,
+      user,
+      pharmacy: order.pharmacy,
+      rating: dto.rating,
+      comment: dto.comment || null,
+    });
+
+    const savedReview = await this.orderReviewRepo.save(review);
+
+    return {
+      message: 'Review submitted successfully',
+      review: savedReview,
+    };
+  }
+
+  async getPharmacyReviews(pharmacyId: string) {
+    const reviews = await this.orderReviewRepo.find({
+      where: { pharmacy: { id: pharmacyId } },
+      relations: ['user', 'order'],
+      order: { createdAt: 'DESC' },
+    });
+
+    return {
+      pharmacyId,
+      reviews,
+      averageRating:
+        reviews.length > 0
+          ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length
+          : 0,
+      totalReviews: reviews.length,
+    };
+  }
+
+  async cancelOrderByUser(orderId: string, user: User) {
+    return this.orderRepo.manager.transaction(async (manager) => {
+      const order = await manager.findOne(Order, {
+        where: { id: orderId },
+        relations: ['user', 'items', 'items.product', 'pharmacy'],
+      });
+
+      if (!order) {
+        throw new NotFoundException('Order not found');
+      }
+
+      // Verify ownership
+      if (order.user.id !== user.id && user.type !== UserRole.ADMIN) {
+        throw new ForbiddenException('Unauthorized to cancel this order');
+      }
+
+      // Can only cancel pending orders
+      if (order.status !== OrderStatus.PENDING) {
+        throw new BadRequestException(
+          'Only pending orders can be canceled. Current status: ' + order.status,
+        );
+      }
+
+      // Restore stock for each item
+      const pharmMedRepo = manager.getRepository(PharmacyMedicine);
+      for (const item of order.items) {
+        const stock = await pharmMedRepo.findOne({
+          where: {
+            pharmacy: { id: order.pharmacy.id },
+            product: { id: item.product.id },
+          },
+          lock: { mode: 'pessimistic_write' },
+        });
+
+        if (stock) {
+          stock.quantity += item.quantity;
+          await pharmMedRepo.save(stock);
+        }
+      }
+
+      // Update order status
+      order.status = OrderStatus.CANCELED;
+      await manager.save(Order, order);
+
+      return {
+        message: 'Order canceled successfully',
+        orderId: order.id,
+        refundedItems: order.items.length,
+      };
+    });
   }
 }

@@ -16,24 +16,19 @@ import { User, UserRole } from '../user/user.entity';
 import { Product, ProductType } from '../product/product.entity';
 import { Category } from '../category/category.entity';
 
-function distanceInMeters(
-  lat1: number,
-  lon1: number,
-  lat2: number,
-  lon2: number,
-): number {
-  const toRad = (v: number) => (v * Math.PI) / 180;
-  const R = 6371000;
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRad(lat1)) *
-      Math.cos(toRad(lat2)) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
+export interface NearbyPharmacyResult {
+  id: string;
+  name: string;
+  address: string;
+  phone: string;
+  location: {
+    type: 'Point';
+    coordinates: [number, number]; // [longitude, latitude]
+  };
+  distance_meters: number;
+  averageRating: number;
+  services: string[];
+  imageUrl: string;
 }
 
 @Injectable()
@@ -66,8 +61,13 @@ export class PharmacyService {
       user,
       name: dto.name,
       address: dto.address,
+      // Set both legacy lat/lng columns and the new PostGIS geometry column
       latitude: dto.location.latitude,
       longitude: dto.location.longitude,
+      location: {
+        type: 'Point',
+        coordinates: [dto.location.longitude, dto.location.latitude],
+      },
       phone: dto.phone,
       openingMorningFrom: dto.openingHours.morningFrom,
       openingMorningTo: dto.openingHours.morningTo,
@@ -98,6 +98,11 @@ export class PharmacyService {
     if (dto.location) {
       pharmacy.latitude = dto.location.latitude;
       pharmacy.longitude = dto.location.longitude;
+      // Sync the PostGIS geometry column as well
+      pharmacy.location = {
+        type: 'Point',
+        coordinates: [dto.location.longitude, dto.location.latitude],
+      };
       delete (dto as any).location;
     }
     if (dto.openingHours) {
@@ -411,32 +416,59 @@ export class PharmacyService {
     }));
   }
 
+  /**
+   * Find nearby pharmacies using PostGIS spatial functions.
+   * Uses ST_DWithin for efficient filtering (leverages GIST index)
+   * and ST_Distance with ::geography casting for accurate meter-level distances.
+   *
+   * @param lon Longitude (GeoJSON coordinate order: [lon, lat])
+   * @param lat Latitude
+   * @param maxDistance Search radius in meters (default: 5000)
+   * @returns Array of nearby pharmacies sorted by distance ascending
+   */
   async findNearbyPharmacies(
-    longitude: number,
-    latitude: number,
+    lon: number,
+    lat: number,
     maxDistance = 5000,
-  ) {
-    const all = await this.pharmacyRepo.find({
-      select: ['id', 'name', 'latitude', 'longitude'],
-    });
-    const nearby = all
-      .map((p) => ({
-        ...p,
-        distance: distanceInMeters(
-          latitude,
-          longitude,
-          p.latitude,
-          p.longitude,
-        ),
-      }))
-      .filter((p) => p.distance <= maxDistance)
-      .sort((a, b) => a.distance - b.distance)
-      .map((p) => ({
-        name: p.name,
-        location: { latitude: p.latitude, longitude: p.longitude },
-        id: p.id,
-      }));
-    return nearby;
+  ): Promise<NearbyPharmacyResult[]> {
+    // ST_DWithin with ::geography uses the GIST spatial index for efficient filtering.
+    // ST_Distance with ::geography returns accurate meter-level distances on the spheroid.
+    // ST_AsGeoJSON converts the geometry to GeoJSON format for frontend compatibility.
+    const rawResults = await this.pharmacyRepo
+      .createQueryBuilder('p')
+      .select([
+        'p.id AS id',
+        'p.name AS name',
+        'p.address AS address',
+        'p.phone AS phone',
+        'p."averageRating" AS "averageRating"',
+        'p.services AS services',
+        'p."imageUrl" AS "imageUrl"',
+        'ST_AsGeoJSON(p.location)::json AS location',
+        'ST_Distance(p.location::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography) AS distance_meters',
+      ])
+      .where(
+        `ST_DWithin(p.location::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, :radius)`,
+        { lon, lat, radius: maxDistance },
+      )
+      .andWhere('p."isActive" = :isActive', { isActive: true })
+      .orderBy('distance_meters', 'ASC')
+      .getRawMany();
+
+    return rawResults.map((row) => ({
+      id: row.id,
+      name: row.name,
+      address: row.address,
+      phone: row.phone,
+      averageRating: parseFloat(row.averageRating) || 0,
+      services: Array.isArray(row.services) ? row.services : [],
+      imageUrl: row.imageurl || row.imageUrl,
+      location:
+        typeof row.location === 'string'
+          ? JSON.parse(row.location)
+          : row.location,
+      distance_meters: parseFloat(row.distance_meters),
+    }));
   }
 
   async createProductAndAdd(user: User, dto: CreateProductForPharmacyDto) {

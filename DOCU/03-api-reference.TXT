@@ -1,0 +1,2103 @@
+# Complete API Reference
+
+## API Overview
+
+- **Base URL**: `http://localhost:3000` (development)
+- **API Documentation**: `http://localhost:3000/api` (Swagger UI)
+- **Authentication**: JWT Bearer token in `Authorization` header
+- **Response Format**: Unified JSON structure via ResponseInterceptor
+- **Rate Limiting**: 10 requests/minute global, stricter on auth endpoints
+
+## Response Format
+
+All successful responses follow this structure:
+
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Operation successful",
+  "data": { ... }
+}
+```
+
+Error responses:
+
+```json
+{
+  "statusCode": 400,
+  "timestamp": "2026-04-12T10:30:00.000Z",
+  "path": "/api/path",
+  "correlationId": "uuid-here",
+  "message": "Error description"
+}
+```
+
+## Authentication
+
+### Auth Endpoints
+
+#### POST `/auth/login`
+
+Login with email and password.
+
+**Rate Limit**: 5 requests/minute
+
+**Request Body**:
+```json
+{
+  "email": "user@example.com",
+  "password": "your_password"
+}
+```
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Login successful",
+  "data": {
+    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "user": {
+      "id": "uuid",
+      "email": "user@example.com",
+      "type": "user"
+    }
+  }
+}
+```
+
+**Error Responses**:
+- `401 Unauthorized`: Invalid credentials
+- `400 Bad Request`: Invalid input format
+
+---
+
+#### POST `/auth/verify-email`
+
+Verify email with 6-digit code.
+
+**Rate Limit**: 5 requests/minute
+
+**Request Body**:
+```json
+{
+  "email": "user@example.com",
+  "code": "123456"
+}
+```
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Email verified successfully",
+  "data": null
+}
+```
+
+**Error Responses**:
+- `400 Bad Request`: Invalid or expired code
+- `404 Not Found`: User not found
+
+---
+
+#### POST `/auth/request-password-reset`
+
+Request password reset email.
+
+**Rate Limit**: 3 requests/minute
+
+**Request Body**:
+```json
+{
+  "email": "user@example.com"
+}
+```
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Password reset email sent",
+  "data": null
+}
+```
+
+**Error Responses**:
+- `404 Not Found`: Email not found
+
+---
+
+#### POST `/auth/reset-password`
+
+Reset password with token.
+
+**Request Body**:
+```json
+{
+  "token": "reset_token_from_email",
+  "newPassword": "new_secure_password"
+}
+```
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Password reset successful",
+  "data": null
+}
+```
+
+**Error Responses**:
+- `400 Bad Request`: Invalid or expired token
+
+---
+
+## User Endpoints
+
+#### POST `/users/register`
+
+Register new user account.
+
+**Rate Limit**: 5 requests/minute
+
+**Request Body**:
+```json
+{
+  "username": "johndoe",
+  "email": "user@example.com",
+  "password": "secure_password",
+  "firstName": "John",
+  "lastName": "Doe",
+  "phone": "+1234567890",
+  "type": "user",
+  "address": "123 Main St",
+  "latitude": 40.7128,
+  "longitude": -74.0060
+}
+```
+
+**Response** (201):
+```json
+{
+  "statusCode": 201,
+  "success": true,
+  "message": "Registration successful. Please verify your email.",
+  "data": {
+    "id": "uuid",
+    "email": "user@example.com",
+    "username": "johndoe",
+    "type": "user",
+    "isVerified": false
+  }
+}
+```
+
+**Error Responses**:
+- `409 Conflict`: Email already exists
+- `400 Bad Request`: Invalid input
+
+---
+
+#### POST `/users/admin`
+
+Create admin user (disabled in production).
+
+**Rate Limit**: 3 requests/minute
+
+**Request Body**:
+```json
+{
+  "username": "admin",
+  "email": "admin@example.com",
+  "password": "admin_password",
+  "secretKey": "SECRET_KEY_ADMIN value"
+}
+```
+
+**Response** (201):
+```json
+{
+  "statusCode": 201,
+  "success": true,
+  "message": "Admin created successfully",
+  "data": {
+    "id": "uuid",
+    "email": "admin@example.com",
+    "type": "admin"
+  }
+}
+```
+
+**Error Responses**:
+- `403 Forbidden`: Invalid secret key or production environment
+- `409 Conflict`: Email already exists
+
+---
+
+#### GET `/users/me`
+
+Get current user profile.
+
+**Auth**: JWT required
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Profile retrieved",
+  "data": {
+    "id": "uuid",
+    "email": "user@example.com",
+    "username": "johndoe",
+    "type": "user",
+    "firstName": "John",
+    "lastName": "Doe",
+    "phone": "+1234567890",
+    "isVerified": true,
+    "address": "123 Main St",
+    "latitude": 40.7128,
+    "longitude": -74.0060
+  }
+}
+```
+
+---
+
+#### GET `/users`
+
+Get all users (admin only).
+
+**Auth**: JWT + Admin role
+
+**Query Parameters**:
+- `page` (optional, default: 1)
+- `limit` (optional, default: 20)
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Users retrieved",
+  "data": {
+    "users": [...],
+    "total": 100,
+    "page": 1,
+    "limit": 20
+  }
+}
+```
+
+---
+
+#### GET `/users/:id`
+
+Get user by ID (admin only).
+
+**Auth**: JWT + Admin role
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "User retrieved",
+  "data": {
+    "id": "uuid",
+    "email": "user@example.com",
+    "username": "johndoe",
+    "type": "user"
+  }
+}
+```
+
+---
+
+#### PATCH `/users/:id`
+
+Update user profile (owner or admin).
+
+**Auth**: JWT
+
+**Request Body** (all fields optional):
+```json
+{
+  "firstName": "Jane",
+  "lastName": "Smith",
+  "phone": "+0987654321",
+  "address": "456 Oak Ave"
+}
+```
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "User updated",
+  "data": { ... }
+}
+```
+
+---
+
+#### DELETE `/users/:id`
+
+Delete user (owner or admin).
+
+**Auth**: JWT
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "User deleted",
+  "data": null
+}
+```
+
+---
+
+## Category Endpoints
+
+#### POST `/categories`
+
+Create category (admin only).
+
+**Auth**: JWT + Admin role
+
+**Request Body**:
+```json
+{
+  "name": "Pain Relief",
+  "image": "https://example.com/image.jpg"
+}
+```
+
+**Response** (201):
+```json
+{
+  "statusCode": 201,
+  "success": true,
+  "message": "Category created",
+  "data": {
+    "id": "uuid",
+    "name": "Pain Relief",
+    "slug": "pain-relief",
+    "image": "https://example.com/image.jpg"
+  }
+}
+```
+
+---
+
+#### PUT `/categories/:id`
+
+Update category (admin only).
+
+**Auth**: JWT + Admin role
+
+**Request Body**:
+```json
+{
+  "name": "Updated Name",
+  "image": "https://example.com/new-image.jpg"
+}
+```
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Category updated",
+  "data": { ... }
+}
+```
+
+---
+
+#### GET `/categories`
+
+Get all categories (public).
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Categories retrieved",
+  "data": [
+    {
+      "id": "uuid",
+      "name": "Pain Relief",
+      "slug": "pain-relief",
+      "image": "https://example.com/image.jpg"
+    }
+  ]
+}
+```
+
+---
+
+#### GET `/categories/:id`
+
+Get category by ID (public).
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Category retrieved",
+  "data": { ... }
+}
+```
+
+---
+
+#### GET `/categories/search/:name`
+
+Search categories by name (public).
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Search results",
+  "data": [ ... ]
+}
+```
+
+---
+
+#### DELETE `/categories/:id`
+
+Delete category (admin only).
+
+**Auth**: JWT + Admin role
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Category deleted",
+  "data": null
+}
+```
+
+---
+
+#### DELETE `/categories/name/:name`
+
+Delete category by name (admin only).
+
+**Auth**: JWT + Admin role
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Category deleted",
+  "data": null
+}
+```
+
+---
+
+#### GET `/categories/:categoryId/products`
+
+Get products in category (public).
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Products retrieved",
+  "data": [
+    {
+      "id": "uuid",
+      "name": "Product Name",
+      "slug": "product-name",
+      "type": "Medicine",
+      "price": 19.99,
+      "imageUrl": "https://example.com/product.jpg"
+    }
+  ]
+}
+```
+
+---
+
+## Product Endpoints
+
+#### POST `/products`
+
+Create product (admin only).
+
+**Auth**: JWT + Admin role
+
+**Request Body**:
+```json
+{
+  "name": "Aspirin 500mg",
+  "type": "Medicine",
+  "categoryId": "uuid",
+  "sub_category": "Pain Relief",
+  "brand": "Bayer",
+  "description": "Pain reliever",
+  "manufacturer": "Bayer Corp",
+  "imageUrl": "https://example.com/aspirin.jpg",
+  "isActive": true,
+  "price": 9.99
+}
+```
+
+**Response** (201):
+```json
+{
+  "statusCode": 201,
+  "success": true,
+  "message": "Product created",
+  "data": { ... }
+}
+```
+
+---
+
+#### GET `/products`
+
+Get all visible products.
+
+**Role Filtering**:
+- Admin/User: See all active products
+- Pharmacist: See admin-created + their own products
+
+**Query Parameters**:
+- `page` (optional)
+- `limit` (optional)
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Products retrieved",
+  "data": {
+    "products": [...],
+    "total": 150,
+    "page": 1,
+    "limit": 20
+  }
+}
+```
+
+---
+
+#### GET `/products/suggestions?query=`
+
+Get search suggestions (top 10).
+
+**Query Parameters**:
+- `query` (required): Search term
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Suggestions retrieved",
+  "data": [
+    "Aspirin 500mg",
+    "Aspirin 300mg",
+    "Aspirin Plus"
+  ]
+}
+```
+
+---
+
+#### GET `/products/favorites`
+
+Get user's favorite products.
+
+**Auth**: JWT required
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Favorites retrieved",
+  "data": [ ... ]
+}
+```
+
+---
+
+#### POST `/products/favorites/:productId/toggle`
+
+Toggle product favorite status.
+
+**Auth**: JWT required
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Favorite toggled",
+  "data": {
+    "isFavorite": true
+  }
+}
+```
+
+---
+
+#### GET `/products/search/:name`
+
+Search products by slug/name.
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Search results",
+  "data": [ ... ]
+}
+```
+
+---
+
+#### GET `/products/category/:categoryId/search?q=`
+
+Search products within category.
+
+**Query Parameters**:
+- `q` (required): Search term
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Category search results",
+  "data": [ ... ]
+}
+```
+
+---
+
+#### GET `/products/search-nearby`
+
+**PostGIS Spatial Search**: Find products at nearby pharmacies.
+
+**Query Parameters**:
+- `productName` (required): Product name to search
+- `lon` (required): User longitude
+- `lat` (required): User latitude
+- `radius` (optional, default: 500000): Search radius in meters (500km default)
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Nearby products found",
+  "data": [
+    {
+      "product": { ... },
+      "pharmacy": {
+        "id": "uuid",
+        "name": "Pharmacy Name",
+        "distance": 1234.56
+      },
+      "stock": {
+        "quantity": 50,
+        "price": 9.99
+      }
+    }
+  ]
+}
+```
+
+---
+
+#### GET `/products/:id`
+
+Get product by ID.
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Product retrieved",
+  "data": { ... }
+}
+```
+
+---
+
+#### PUT `/products/:id`
+
+Update product (admin only).
+
+**Auth**: JWT + Admin role
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Product updated",
+  "data": { ... }
+}
+```
+
+---
+
+#### DELETE `/products/:id`
+
+Delete product (admin only).
+
+**Auth**: JWT + Admin role
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Product deleted",
+  "data": null
+}
+```
+
+---
+
+## Pharmacy Endpoints
+
+#### POST `/pharmacies`
+
+Create pharmacy (pharmacist only).
+
+**Auth**: JWT + Pharmacist role
+
+**Request Body**:
+```json
+{
+  "name": "City Pharmacy",
+  "address": "123 Main St",
+  "latitude": 40.7128,
+  "longitude": -74.0060,
+  "phone": "+1234567890",
+  "morningHourFrom": "08:00",
+  "morningHourTo": "12:00",
+  "eveningHourFrom": "16:00",
+  "eveningHourTo": "20:00",
+  "workingDays": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
+  "description": "Full-service pharmacy",
+  "services": ["Delivery", "Consultation"],
+  "hasDelivery": true
+}
+```
+
+**Response** (201):
+```json
+{
+  "statusCode": 201,
+  "success": true,
+  "message": "Pharmacy created",
+  "data": { ... }
+}
+```
+
+---
+
+#### PUT `/pharmacies/me`
+
+Update my pharmacy (pharmacist only).
+
+**Auth**: JWT + Pharmacist role
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Pharmacy updated",
+  "data": { ... }
+}
+```
+
+---
+
+#### GET `/pharmacies`
+
+Get all active pharmacies (public).
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Pharmacies retrieved",
+  "data": [
+    {
+      "id": "uuid",
+      "name": "City Pharmacy",
+      "slug": "city-pharmacy",
+      "address": "123 Main St",
+      "phone": "+1234567890",
+      "averageRating": 4.5,
+      "hasDelivery": true
+    }
+  ]
+}
+```
+
+---
+
+#### GET `/pharmacies/me`
+
+Get my pharmacy (pharmacist only).
+
+**Auth**: JWT + Pharmacist role
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Pharmacy retrieved",
+  "data": { ... }
+}
+```
+
+---
+
+#### GET `/pharmacies/me/orders`
+
+Get my pharmacy orders (pharmacist only).
+
+**Auth**: JWT + Pharmacist role
+
+**Query Parameters**:
+- `status` (optional): Filter by status
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Pharmacy orders retrieved",
+  "data": [ ... ]
+}
+```
+
+---
+
+#### POST `/pharmacies/:id/rate`
+
+Rate a pharmacy.
+
+**Auth**: JWT required
+
+**Request Body**:
+```json
+{
+  "rating": 4.5
+}
+```
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Rating submitted",
+  "data": {
+    "averageRating": 4.3
+  }
+}
+```
+
+---
+
+#### GET `/pharmacies/me/exists`
+
+Check if user has a pharmacy.
+
+**Auth**: JWT required
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Pharmacy exists",
+  "data": {
+    "exists": true
+  }
+}
+```
+
+---
+
+#### GET `/pharmacies/:id/medicines`
+
+Get pharmacy medicine stock.
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Medicines retrieved",
+  "data": [
+    {
+      "id": "uuid",
+      "product": { ... },
+      "quantity": 50,
+      "price": 9.99,
+      "expiryDate": "2027-12-31",
+      "batchNumber": "BATCH123"
+    }
+  ]
+}
+```
+
+---
+
+#### GET `/pharmacies/:pharmacyId/medicines/search?name=`
+
+Search medicine in pharmacy.
+
+**Query Parameters**:
+- `name` (required): Medicine name
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Medicine search results",
+  "data": [ ... ]
+}
+```
+
+---
+
+#### POST `/pharmacies/me/products`
+
+Add existing product to stock (pharmacist only).
+
+**Auth**: JWT + Pharmacist role
+
+**Request Body**:
+```json
+{
+  "productId": "uuid",
+  "quantity": 100,
+  "price": 9.99,
+  "expiryDate": "2027-12-31",
+  "batchNumber": "BATCH123"
+}
+```
+
+**Response** (201):
+```json
+{
+  "statusCode": 201,
+  "success": true,
+  "message": "Product added to stock",
+  "data": { ... }
+}
+```
+
+---
+
+#### POST `/pharmacies/me/products/new`
+
+Create new product and add to pharmacy stock (pharmacist only).
+
+**Auth**: JWT + Pharmacist role
+
+**Request Body**:
+```json
+{
+  "name": "New Product",
+  "type": "Medicine",
+  "description": "Product description",
+  "price": 19.99,
+  "quantity": 50
+}
+```
+
+**Response** (201):
+```json
+{
+  "statusCode": 201,
+  "success": true,
+  "message": "Product created and added to stock",
+  "data": { ... }
+}
+```
+
+---
+
+#### GET `/pharmacies/nearby`
+
+**PostGIS Spatial Search**: Find nearby pharmacies.
+
+**Query Parameters**:
+- `lon` (required): User longitude
+- `lat` (required): User latitude
+- `radius` (optional, default: 5000): Search radius in meters (5km default, max 100km)
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Nearby pharmacies found",
+  "data": [
+    {
+      "id": "uuid",
+      "name": "Nearby Pharmacy",
+      "address": "456 Oak St",
+      "distance": 1234.56,
+      "averageRating": 4.5,
+      "hasDelivery": true
+    }
+  ]
+}
+```
+
+---
+
+#### GET `/pharmacies/from-cart`
+
+Get pharmacy names from user's cart.
+
+**Auth**: JWT required
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Cart pharmacies retrieved",
+  "data": [
+    {
+      "pharmacyId": "uuid",
+      "pharmacyName": "City Pharmacy"
+    }
+  ]
+}
+```
+
+---
+
+#### GET `/pharmacies/search?name=`
+
+Search pharmacy by name.
+
+**Query Parameters**:
+- `name` (required): Search term
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Search results",
+  "data": [ ... ]
+}
+```
+
+---
+
+#### GET `/pharmacies/me/expiring-medicines`
+
+Get medicines expiring in 3 months (pharmacist only).
+
+**Auth**: JWT + Pharmacist role
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Expiring medicines retrieved",
+  "data": [
+    {
+      "id": "uuid",
+      "product": { ... },
+      "quantity": 20,
+      "expiryDate": "2026-07-15"
+    }
+  ]
+}
+```
+
+---
+
+#### GET `/pharmacies/me/low-stock?threshold=`
+
+Get low stock medicines (pharmacist only).
+
+**Auth**: JWT + Pharmacist role
+
+**Query Parameters**:
+- `threshold` (optional, default: 10): Stock threshold
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Low stock medicines retrieved",
+  "data": [
+    {
+      "id": "uuid",
+      "product": { ... },
+      "quantity": 5,
+      "price": 9.99
+    }
+  ]
+}
+```
+
+---
+
+#### GET `/pharmacies/:id`
+
+Get pharmacy details by ID.
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Pharmacy retrieved",
+  "data": { ... }
+}
+```
+
+---
+
+## Cart Endpoints
+
+All cart endpoints require JWT authentication.
+
+#### POST `/cart/items`
+
+Add item to cart with stock validation.
+
+**Auth**: JWT required
+
+**Request Body**:
+```json
+{
+  "productId": "uuid",
+  "pharmacyId": "uuid",
+  "quantity": 2
+}
+```
+
+**Response** (201):
+```json
+{
+  "statusCode": 201,
+  "success": true,
+  "message": "Item added to cart",
+  "data": {
+    "cart": {
+      "id": "uuid",
+      "items": [ ... ]
+    }
+  }
+}
+```
+
+**Error Responses**:
+- `400 Bad Request`: Insufficient stock
+- `404 Not Found`: Product or pharmacy not found
+
+---
+
+#### GET `/cart`
+
+Get current user's cart.
+
+**Auth**: JWT required
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Cart retrieved",
+  "data": {
+    "id": "uuid",
+    "items": [
+      {
+        "id": "uuid",
+        "product": { ... },
+        "pharmacy": { ... },
+        "quantity": 2,
+        "productName": "Aspirin 500mg"
+      }
+    ]
+  }
+}
+```
+
+---
+
+#### PUT `/cart/items/:productId?pharmacyId=`
+
+Update cart item quantity.
+
+**Auth**: JWT required
+
+**Query Parameters**:
+- `pharmacyId` (required): Pharmacy ID
+
+**Request Body**:
+```json
+{
+  "quantity": 5
+}
+```
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Cart updated",
+  "data": { ... }
+}
+```
+
+**Error Responses**:
+- `400 Bad Request`: Insufficient stock
+
+---
+
+#### DELETE `/cart/items/:productId?pharmacyId=`
+
+Remove item from cart.
+
+**Auth**: JWT required
+
+**Query Parameters**:
+- `pharmacyId` (required): Pharmacy ID
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Item removed from cart",
+  "data": null
+}
+```
+
+---
+
+#### DELETE `/cart`
+
+Clear entire cart.
+
+**Auth**: JWT required
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Cart cleared",
+  "data": null
+}
+```
+
+---
+
+## Order Endpoints
+
+#### POST `/orders`
+
+Create order from cart (runs in transaction with stock locking).
+
+**Auth**: JWT required
+
+**Request Body**:
+```json
+{
+  "pharmacyName": "City Pharmacy",
+  "orderType": "delivery",
+  "deliveryAddress": "456 Oak Ave"
+}
+```
+
+**Response** (201):
+```json
+{
+  "statusCode": 201,
+  "success": true,
+  "message": "Order created",
+  "data": {
+    "id": "uuid",
+    "status": "pending",
+    "totalPrice": 19.98,
+    "items": [ ... ],
+    "pharmacy": { ... }
+  }
+}
+```
+
+**Business Logic**:
+- Validates pharmacy exists
+- Validates order type (delivery requires address)
+- Starts database transaction
+- Acquires pessimistic locks on stock items
+- Deducts inventory atomically
+- Removes ordered items from cart
+- Commits transaction
+
+**Error Responses**:
+- `400 Bad Request`: Invalid pharmacy, insufficient stock, missing delivery address
+- `404 Not Found`: Pharmacy not found
+
+---
+
+#### PUT `/orders/:orderId/status`
+
+Update order status (role-based transitions).
+
+**Auth**: JWT required
+
+**Request Body**:
+```json
+{
+  "status": "accepted"
+}
+```
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Order status updated",
+  "data": { ... }
+}
+```
+
+**Status Transition Rules**: See [Permissions & Authorization Document](./04-permissions-authorization.md)
+
+---
+
+#### GET `/orders/pharmacy`
+
+Get incoming orders for pharmacy (pharmacist only).
+
+**Auth**: JWT + Pharmacist role
+
+**Query Parameters**:
+- `status` (optional): Filter by status
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Pharmacy orders retrieved",
+  "data": [ ... ]
+}
+```
+
+---
+
+#### GET `/orders/me`
+
+Get current user's orders.
+
+**Auth**: JWT required
+
+**Query Parameters**:
+- `status` (optional): Filter by status
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Orders retrieved",
+  "data": [ ... ]
+}
+```
+
+---
+
+#### GET `/orders/:orderId`
+
+Get order details (ownership check).
+
+**Auth**: JWT required
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Order retrieved",
+  "data": {
+    "id": "uuid",
+    "status": "pending",
+    "user": { ... },
+    "pharmacy": { ... },
+    "items": [ ... ],
+    "totalPrice": 19.98,
+    "createdAt": "2026-04-12T10:30:00.000Z"
+  }
+}
+```
+
+---
+
+#### POST `/orders/:orderId/rate`
+
+Rate delivered order (once-only).
+
+**Auth**: JWT required
+
+**Request Body**:
+```json
+{
+  "ratingScore": 4.5,
+  "ratingComment": "Great service!"
+}
+```
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Order rated",
+  "data": null
+}
+```
+
+**Error Responses**:
+- `400 Bad Request`: Order not delivered or already rated
+
+---
+
+## Emergency Order Endpoints
+
+#### POST `/emergency-orders/create-smart`
+
+Create smart emergency order with PostGIS matching.
+
+**Auth**: JWT required
+
+**Request Body**:
+```json
+{
+  "requestedMedicine": "Insulin",
+  "deliveryAddress": "456 Oak Ave",
+  "latitude": 40.7128,
+  "longitude": -74.0060,
+  "additionalNotes": "Urgent need",
+  "priority": "high"
+}
+```
+
+**Response** (201):
+```json
+{
+  "statusCode": 201,
+  "success": true,
+  "message": "Emergency order created with smart matching",
+  "data": {
+    "order": { ... },
+    "targettedPharmacies": [
+      {
+        "pharmacy": { ... },
+        "score": 85.5,
+        "distanceScore": 45.2,
+        "ratingScore": 25.8,
+        "availabilityScore": 20
+      }
+    ]
+  }
+}
+```
+
+**Smart Matching Algorithm**:
+1. Finds matching product by name (ILike)
+2. Scores pharmacies within 50km:
+   - Distance: 0-50 points
+   - Rating: 0-30 points
+   - Availability: 0-20 points
+3. Returns top 5 scored pharmacies
+4. Creates emergency order linked to targeted pharmacies
+
+---
+
+#### GET `/emergency-orders`
+
+Get current user's emergency orders.
+
+**Auth**: JWT required
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Emergency orders retrieved",
+  "data": [ ... ]
+}
+```
+
+---
+
+#### GET `/emergency-orders/pharmacy/requests`
+
+Get incoming emergency requests (pharmacist only).
+
+**Auth**: JWT + Pharmacist role
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Emergency requests retrieved",
+  "data": [ ... ]
+}
+```
+
+---
+
+#### GET `/emergency-orders/:id`
+
+Get emergency order details.
+
+**Auth**: JWT required
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Emergency order retrieved",
+  "data": { ... }
+}
+```
+
+---
+
+#### PUT `/emergency-orders/:id/respond`
+
+Respond to emergency order (pharmacist only).
+
+**Auth**: JWT + Pharmacist role
+
+**Request Body**:
+```json
+{
+  "response": "accepted",
+  "rejectionReason": "Out of stock"
+}
+```
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Response submitted",
+  "data": null
+}
+```
+
+---
+
+#### PUT `/emergency-orders/:id/cancel`
+
+Cancel emergency order (owner only).
+
+**Auth**: JWT required
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Order canceled",
+  "data": null
+}
+```
+
+---
+
+#### PUT `/emergency-orders/:id/fulfill`
+
+Fulfill emergency order (owner only).
+
+**Auth**: JWT required
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Order fulfilled",
+  "data": null
+}
+```
+
+---
+
+## Chat Endpoints
+
+### REST API
+
+#### POST `/chat`
+
+Send message in order chat.
+
+**Auth**: JWT required
+
+**Request Body**:
+```json
+{
+  "orderId": "uuid",
+  "content": "Hello, is my order ready?",
+  "imageUrl": "https://example.com/image.jpg"
+}
+```
+
+**Response** (201):
+```json
+{
+  "statusCode": 201,
+  "success": true,
+  "message": "Message sent",
+  "data": { ... }
+}
+```
+
+**Constraints**:
+- Max content length: 2000 characters
+- User must have access to the order
+
+---
+
+#### GET `/chat/:orderId`
+
+Get messages for order.
+
+**Auth**: JWT required
+
+**Query Parameters**:
+- `page` (optional, default: 1)
+- `limit` (optional, default: 50)
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Messages retrieved",
+  "data": {
+    "messages": [ ... ],
+    "total": 100,
+    "page": 1,
+    "limit": 50
+  }
+}
+```
+
+---
+
+### WebSocket Gateway (`/chat` namespace)
+
+#### Connection
+
+Connect with JWT token in handshake header:
+
+```javascript
+const socket = io('http://localhost:3000/chat', {
+  auth: {
+    token: 'Bearer YOUR_JWT_TOKEN'
+  }
+});
+```
+
+#### Events
+
+**`joinOrderRoom`**: Join order chat room
+
+```javascript
+socket.emit('joinOrderRoom', { orderId: 'uuid' }, (response) => {
+  console.log(response); // { success: true, message: 'Joined room' }
+});
+```
+
+**`sendMessage`**: Send message to order room
+
+```javascript
+socket.emit('sendMessage', {
+  orderId: 'uuid',
+  content: 'Hello from WebSocket!'
+}, (response) => {
+  console.log(response); // { success: true, message: 'Message sent' }
+});
+```
+
+**`newMessage`**: Listen for new messages
+
+```javascript
+socket.on('newMessage', (message) => {
+  console.log('New message:', message);
+});
+```
+
+---
+
+## Used Medicine Endpoints
+
+All endpoints require JWT authentication.
+
+#### POST `/used-medicines`
+
+Add or update used medicine (supports bulk).
+
+**Auth**: JWT required
+
+**Request Body**:
+```json
+{
+  "items": [
+    {
+      "productId": "uuid",
+      "dosage": "500mg",
+      "frequency": "3 times daily",
+      "startDate": "2026-01-01",
+      "endDate": "2026-12-31",
+      "reminderTime": "08:00"
+    }
+  ]
+}
+```
+
+**Response** (201):
+```json
+{
+  "statusCode": 201,
+  "success": true,
+  "message": "Used medicine added",
+  "data": { ... }
+}
+```
+
+---
+
+#### GET `/used-medicines`
+
+Get my used medicines.
+
+**Auth**: JWT required
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Used medicines retrieved",
+  "data": [ ... ]
+}
+```
+
+---
+
+#### PUT `/used-medicines/:id`
+
+Update medicine details.
+
+**Auth**: JWT required
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Medicine updated",
+  "data": { ... }
+}
+```
+
+---
+
+#### DELETE `/used-medicines/:id`
+
+Delete medicine entry.
+
+**Auth**: JWT required
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Medicine deleted",
+  "data": null
+}
+```
+
+---
+
+## KafuPost Endpoints
+
+#### POST `/kafu-posts`
+
+Create new Kafu post.
+
+**Auth**: JWT required
+
+**Request Body**:
+```json
+{
+  "title": "Need help with medicine payment",
+  "description": "I need financial assistance for my medication",
+  "type": "Medicine Payment",
+  "medicineName": "Insulin",
+  "pharmacyName": "City Pharmacy",
+  "areaName": "Downtown",
+  "expiresAt": "2026-05-12T10:30:00.000Z"
+}
+```
+
+**Response** (201):
+```json
+{
+  "statusCode": 201,
+  "success": true,
+  "message": "Post created",
+  "data": { ... }
+}
+```
+
+---
+
+#### GET `/kafu-posts`
+
+Get all open posts (public).
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Open posts retrieved",
+  "data": [ ... ]
+}
+```
+
+---
+
+#### GET `/kafu-posts/area?areaName=`
+
+Filter posts by area (public).
+
+**Query Parameters**:
+- `areaName` (required): Area name
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Area posts retrieved",
+  "data": [ ... ]
+}
+```
+
+---
+
+#### PUT `/kafu-posts/:id/accept`
+
+Accept a help request.
+
+**Auth**: JWT required
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Post accepted",
+  "data": { ... }
+}
+```
+
+**Error Responses**:
+- `400 Bad Request`: Cannot accept own post or already accepted
+
+---
+
+#### PUT `/kafu-posts/:id/complete`
+
+Mark as completed (helper only).
+
+**Auth**: JWT required
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Post completed",
+  "data": { ... }
+}
+```
+
+---
+
+#### DELETE `/kafu-posts/:id`
+
+Delete post (owner or admin).
+
+**Auth**: JWT required
+
+**Response** (200):
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "Post deleted",
+  "data": null
+}
+```
+
+---
+
+## Upload Endpoints
+
+#### POST `/upload`
+
+Upload image file to Cloudinary.
+
+**Auth**: JWT required
+
+**Content-Type**: `multipart/form-data`
+
+**Form Data**:
+- `file` (required): Image file (jpeg, png, jpg, gif, max 5MB)
+
+**Response** (201):
+```json
+{
+  "statusCode": 201,
+  "success": true,
+  "message": "File uploaded",
+  "data": {
+    "url": "https://res.cloudinary.com/...",
+    "publicId": "my-app-uploads/..."
+  }
+}
+```
+
+**Error Responses**:
+- `400 Bad Request`: Invalid file type or size
+- `413 Payload Too Large`: File exceeds 5MB limit
+
+---
+
+## Error Codes Reference
+
+| Status Code | Meaning | Common Causes |
+|-------------|---------|---------------|
+| 200 | OK | Successful request |
+| 201 | Created | Resource created successfully |
+| 400 | Bad Request | Invalid input, validation errors |
+| 401 | Unauthorized | Missing or invalid JWT token |
+| 403 | Forbidden | Insufficient permissions |
+| 404 | Not Found | Resource not found |
+| 409 | Conflict | Duplicate resource (e.g., email exists) |
+| 413 | Payload Too Large | File size exceeds limit |
+| 429 | Too Many Requests | Rate limit exceeded |
+| 500 | Internal Server Error | Server error |
+
+---
+
+## Rate Limits
+
+| Endpoint | Limit |
+|----------|-------|
+| Global | 10 requests/minute |
+| `/auth/login` | 5 requests/minute |
+| `/auth/verify-email` | 5 requests/minute |
+| `/auth/request-password-reset` | 3 requests/minute |
+| `/users/register` | 5 requests/minute |
+| `/users/admin` | 3 requests/minute |
+
+---
+
+## Query Parameters Reference
+
+### Pagination
+Most list endpoints support:
+- `page` (default: 1)
+- `limit` (default: 20)
+
+### Filtering
+- `status`: Filter by order/status type
+- `name`: Search by name
+- `query`: Search term for suggestions
+
+### Spatial Queries
+- `lat`: Latitude coordinate
+- `lon`: Longitude coordinate
+- `radius`: Search radius in meters
+
+---
+
+## Legacy Routes
+
+Several endpoints have legacy aliases for backward compatibility:
+
+| Current Route | Legacy Route |
+|---------------|--------------|
+| `PUT /pharmacies/updatePharmacy` | `PUT /pharmacies/updatePharmacy` |
+| `GET /pharmacies/getMyPharmacy` | `GET /pharmacies/getMyPharmacy` |
+| `GET /pharmacies/getMyPharmacyOrders` | `GET /pharmacies/getMyPharmacyOrders` |
+| `GET /pharmacies/getPharmacyMedicines/:id` | `GET /pharmacies/getPharmacyMedicines/:id` |
+| `GET /pharmacies/pharmacies/:pharmacyId/search-medicine` | `GET /pharmacies/pharmacies/:pharmacyId/search-medicine` |
+| `GET /pharmacies/checkUserHasPharmacy` | `GET /pharmacies/checkUserHasPharmacy` |
+| `GET /pharmacies/getPharmacyNamefromcart` | `GET /pharmacies/getPharmacyNamefromcart` |
+| `GET /pharmacies/searchPharmacyByName` | `GET /pharmacies/searchPharmacyByName` |
+| `GET /pharmacies/getPharmacyDetails/:id` | `GET /pharmacies/getPharmacyDetails/:id` |

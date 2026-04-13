@@ -20,6 +20,20 @@ import { Pharmacy, PharmacyMedicine } from '../../pharmacy/pharmacy.entity';
 import { Product } from '../../product/product.entity';
 import { ORDER_CONSTANTS } from '../../../common/constants/order.constants';
 
+export interface SmartMatchResult {
+  pharmacyId: string;
+  pharmacyName: string;
+  score: number;
+  distance_meters: number;
+  rating: number;
+  hasProduct: boolean;
+}
+
+export interface SmartOrderResponse {
+  order: EmergencyOrder;
+  matchedPharmacies: SmartMatchResult[];
+}
+
 @Injectable()
 export class EmergencyOrderService {
   constructor(
@@ -35,18 +49,30 @@ export class EmergencyOrderService {
     private readonly pharmacyMedicineRepo: Repository<PharmacyMedicine>,
   ) {}
 
+  /**
+   * Create a smart emergency order using PostGIS spatial scoring.
+   *
+   * Scoring equation (out of 100):
+   *   - Distance score (0-50): GREATEST(0, 50 - (distance_meters / max_distance) * 50)
+   *   - Rating score (0-30):  (rating / 5) * 30
+   *   - Availability score (0-20): 20 if drug is available, 0 otherwise
+   *
+   * Uses ::geography casting for accurate meter-level distance calculations
+   * on the WGS84 spheroid instead of planar geometry which would be inaccurate.
+   */
   async createSmartOrder(
     user: User,
     dto: CreateEmergencyOrderDto,
-  ): Promise<EmergencyOrder> {
+  ): Promise<SmartOrderResponse> {
     const {
       requestedMedicine,
       deliveryAddress,
       additionalNotes,
       priority,
       responseTimeoutInMinutes,
+      latitude,
+      longitude,
     } = dto;
-    const { latitude, longitude } = dto;
 
     if (latitude == null || longitude == null) {
       throw new BadRequestException(
@@ -54,7 +80,7 @@ export class EmergencyOrderService {
       );
     }
 
-    // 1. Find Product
+    // 1. Find the matching product
     const product = await this.productRepo.findOne({
       where: { name: ILike(`%${requestedMedicine}%`) },
     });
@@ -65,89 +91,79 @@ export class EmergencyOrderService {
       );
     }
 
-    // 2. Optimized Geospatial Search using SQL (Haversine Formula)
-    // Instead of fetching ALL pharmacies, we filter by bounding box (rough) or just calculate distance in DB.
-    // We also join pharmacy_medicine to check availability in one query.
+    const maxDistance = ORDER_CONSTANTS.MAX_SEARCH_DISTANCE_METERS; // 50km
 
-    const pharmacies = await this.pharmacyRepo
-      .createQueryBuilder('pharmacy')
-      .leftJoinAndSelect(
-        'pharmacy.medicines',
-        'pm',
-        'pm.productId = :productId',
-        { productId: product.id },
-      )
-      .addSelect(
-        `(
-          ${ORDER_CONSTANTS.EARTH_RADIUS_METERS} * acos(
-            cos(radians(:lat)) * cos(radians(pharmacy.latitude)) * cos(radians(pharmacy.longitude) - radians(:lng)) +
-            sin(radians(:lat)) * sin(radians(pharmacy.latitude))
-          )
-        )`,
-        'distance',
-      )
-      .where('pharmacy.isActive = :isActive', { isActive: true })
-      // Filter pharmacies within max distance (HAVING distance < MAX)
-      // Note: 'having' with alias might vary by DB, but in Postgres we can use the expression or alias if supported.
-      // Safer to wrap in bracket or just use the formula in where clause if performance is critical,
-      // but for readability let's filter in JS for now or use a subquery.
-      // Actually, let's filter in JS after fetching potential candidates to keep it simple but faster than before.
-      // Better: Order by distance and limit? No, we need scoring.
-      // Let's fetching pharmacies with calculated distance.
-      .setParameters({ lat: latitude, lng: longitude })
-      .getRawAndEntities();
-    // getRawAndEntities returns { entities: [], raw: [] }. Raw contains 'distance'.
+    // 2. Use raw SQL with PostGIS for scoring.
+    // We use repository.query() because the scoring equation is complex.
+    // The ::geography cast ensures accurate distance on the spheroid (not planar projection).
+    // ST_DWithin uses the GIST spatial index for efficient filtering.
+    const scoredResults = await this.pharmacyRepo.query(
+      `
+      SELECT
+        p.id AS "pharmacyId",
+        p.name AS "pharmacyName",
+        p."averageRating" AS rating,
+        ST_Distance(
+          p.location::geography,
+          ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography
+        ) AS distance_meters,
+        GREATEST(0, 50 - (
+          ST_Distance(
+            p.location::geography,
+            ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography
+          ) / $3 * 50
+        ))
+        + (COALESCE(p."averageRating", 0) / 5.0 * 30)
+        + (
+          CASE WHEN EXISTS (
+            SELECT 1 FROM pharmacy_medicines pm
+            WHERE pm."pharmacyId" = p.id
+              AND pm."productId" = $4
+              AND pm.quantity > 0
+          ) THEN 20 ELSE 0 END
+        ) AS total_score,
+        EXISTS (
+          SELECT 1 FROM pharmacy_medicines pm
+          WHERE pm."pharmacyId" = p.id
+            AND pm."productId" = $4
+            AND pm.quantity > 0
+        ) AS "hasProduct"
+      FROM pharmacies p
+      WHERE p."isActive" = true
+        AND ST_DWithin(
+          p.location::geography,
+          ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography,
+          $3
+        )
+      ORDER BY total_score DESC
+      LIMIT 5
+      `,
+      [longitude, latitude, maxDistance, product.id],
+    );
 
-    // 3. Score Pharmacies
-    const scoredPharmacies: { pharmacy: Pharmacy; score: number }[] = [];
-
-    for (const item of pharmacies.entities) {
-      // Find the raw result for distance
-      const raw = pharmacies.raw.find((r) => r.pharmacy_id === item.id);
-      const distance = raw ? parseFloat(raw.distance) : Infinity;
-
-      if (distance > ORDER_CONSTANTS.MAX_SEARCH_DISTANCE_METERS) continue;
-
-      // Check availability (pre-loaded in query check?)
-      // We joined 'medicines' with condition. If pm exists in relation (or check raw), it's available.
-      // However, leftJoinAndSelect on 'medicines' populates item.medicines array if match found.
-      // Since we filtered join by productId, if array is not empty, product is available.
-      // Wait, TypeORM relation loading with condition on OneToMany might be tricky.
-      // Let's assume we used the join correctly. If not, fallback to separate check.
-      // Actually, TypeORM leftJoinAndSelect with condition filters the relation population.
-
-      const hasProduct = item.medicines && item.medicines.length > 0;
-
-      const distanceScore = Math.max(
-        0,
-        ORDER_CONSTANTS.SCORING.DISTANCE_WEIGHT -
-          (distance / ORDER_CONSTANTS.SCORING.BASE_DISTANCE_FACTOR) *
-            ORDER_CONSTANTS.SCORING.DISTANCE_WEIGHT,
-      );
-      const ratingScore =
-        ((item.averageRating || 0) / ORDER_CONSTANTS.SCORING.MAX_RATING) *
-        ORDER_CONSTANTS.SCORING.RATING_WEIGHT;
-      const availabilityScore = hasProduct
-        ? ORDER_CONSTANTS.SCORING.AVAILABILITY_WEIGHT
-        : 0;
-
-      const totalScore = distanceScore + ratingScore + availabilityScore;
-
-      if (hasProduct && totalScore > 20) {
-        scoredPharmacies.push({ pharmacy: item, score: totalScore });
-      }
-    }
-
-    scoredPharmacies.sort((a, b) => b.score - a.score);
-    const topPharmacies = scoredPharmacies.slice(0, 5).map((p) => p.pharmacy);
-
-    if (topPharmacies.length === 0) {
+    if (scoredResults.length === 0) {
       throw new NotFoundException(
         'Unfortunately, no nearby pharmacies currently have this product in stock.',
       );
     }
 
-    // 4. Create Order
+    // 3. Build the matched pharmacies list
+    const matchedPharmacies: SmartMatchResult[] = scoredResults.map(
+      (row: any) => ({
+        pharmacyId: row.pharmacyId,
+        pharmacyName: row.pharmacyName,
+        score: Math.round(parseFloat(row.total_score) * 100) / 100,
+        distance_meters: Math.round(parseFloat(row.distance_meters)),
+        rating: parseFloat(row.rating) || 0,
+        hasProduct: row.hasProduct === true || row.hasProduct === 't',
+      }),
+    );
+
+    // 4. Fetch full Pharmacy entities for the order relation
+    const pharmacyIds = matchedPharmacies.map((p) => p.pharmacyId);
+    const pharmacies = await this.pharmacyRepo.findByIds(pharmacyIds);
+
+    // 5. Create the emergency order
     const order = this.orderRepo.create({
       user,
       requestedMedicine: product.name,
@@ -164,10 +180,18 @@ export class EmergencyOrderService {
             1000,
       ),
       status: EmergencyOrderStatus.PENDING,
-      targettedPharmacies: topPharmacies,
+      targettedPharmacies: pharmacies,
     });
 
-    return await this.orderRepo.save(order);
+    // Set the PostGIS geometry column for the order
+    order.setLocation(longitude, latitude);
+
+    const savedOrder = await this.orderRepo.save(order);
+
+    return {
+      order: savedOrder,
+      matchedPharmacies,
+    };
   }
 
   async findOrderById(id: string): Promise<EmergencyOrder> {

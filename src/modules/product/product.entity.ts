@@ -74,6 +74,9 @@ export class Product {
   @Column({ type: 'boolean', default: false })
   isAdminCreated: boolean;
 
+  @Column({ type: 'boolean', default: false })
+  requiresPrescription: boolean;
+
   @CreateDateColumn()
   createdAt: Date;
 

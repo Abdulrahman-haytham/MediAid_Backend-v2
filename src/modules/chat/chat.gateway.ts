@@ -64,6 +64,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return { error: 'Unauthorized' };
     }
 
+    // Validate message content length
+    if (createMessageDto.content.length > 2000) {
+      return { error: 'Message content too long (max 2000 characters)' };
+    }
+
     try {
       const message = await this.chatService.create(user.sub, createMessageDto);
 

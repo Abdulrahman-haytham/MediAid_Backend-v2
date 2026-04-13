@@ -1,0 +1,1689 @@
+# Business Logic & Workflow Flows
+
+## Table of Contents
+
+1. [User Registration & Authentication Flow](#1-user-registration--authentication-flow)
+2. [Order Creation Flow (Transactional)](#2-order-creation-flow-transactional)
+3. [Order Status Transition Flow](#3-order-status-transition-flow)
+4. [Emergency Order Smart Matching Flow](#4-emergency-order-smart-matching-flow)
+5. [Cart Management Flow](#5-cart-management-flow)
+6. [Pharmacy Management Flow](#6-pharmacy-management-flow)
+7. [Chat & Communication Flow](#7-chat--communication-flow)
+8. [KafuPost Community Help Flow](#8-kafupost-community-help-flow)
+9. [Used Medicine Tracking Flow](#9-used-medicine-tracking-flow)
+10. [Background Jobs & Scheduled Tasks](#10-background-jobs--scheduled-tasks)
+11. [File Upload Flow](#11-file-upload-flow)
+12. [Error Handling & Recovery](#12-error-handling--recovery)
+
+---
+
+## 1. User Registration & Authentication Flow
+
+### Complete Registration Flow
+
+```
+┌─────────────┐
+│   User      │
+│  Fills Form │
+└──────┬──────┘
+       │
+       ▼
+┌─────────────────────────┐
+│ POST /users/register    │
+│ - Validate input        │
+│ - Check email unique    │
+│ - Hash password (bcrypt)│
+│ - Generate verify code  │
+│ - Create user           │
+│   (isVerified: false)   │
+└──────┬──────────────────┘
+       │
+       ├─────────────────────────────┐
+       │                             │
+       ▼                             ▼
+┌──────────────┐           ┌──────────────────┐
+│ Return User  │           │ Send Email       │
+│ (non-block)  │           │ (6-digit code)   │
+└──────────────┘           └────────┬─────────┘
+                                    │
+                                    │ (Async, non-blocking)
+                                    │
+                                    ▼
+                           ┌─────────────────┐
+                           │ If email fails: │
+                           │ - Log error     │
+                           │ - Don't block   │
+                           │   registration  │
+                           └─────────────────┘
+
+       │
+       ▼
+┌──────────────────────┐
+│ User Receives Email  │
+│ with 6-digit code    │
+└──────┬───────────────┘
+       │
+       ▼
+┌─────────────────────────┐
+│ POST /auth/verify-email │
+│ - Validate code         │
+│ - Match with stored     │
+│ - Set isVerified: true  │
+│ - Clear verificationCode│
+└──────┬──────────────────┘
+       │
+       ▼
+┌──────────────────────┐
+│ Account Verified ✓   │
+│ User can now login   │
+└──────────────────────┘
+```
+
+### Login Flow
+
+```
+┌─────────────┐
+│   User      │
+│  Submits    │
+│ Credentials │
+└──────┬──────┘
+       │
+       ▼
+┌──────────────────────┐
+│ POST /auth/login     │
+│ 1. Find user by email│
+│ 2. Check isVerified  │
+│ 3. Compare password  │
+│    (bcrypt.compare)  │
+└──────┬───────────────┘
+       │
+       ├───── Success ────► Generate JWT Token
+       │                      │
+       │                      ├─ Payload: {sub, email, role}
+       │                      ├─ Sign with JWT_SECRET
+       │                      └─ Set expiration
+       │                      │
+       │                      ▼
+       │                 Return Token
+       │
+       └───── Failure ────► Return 401 Unauthorized
+```
+
+### Password Reset Flow
+
+```
+┌───────────────────────────────┐
+│ User Requests Password Reset  │
+│ POST /auth/request-password   │
+└──────────┬────────────────────┘
+           │
+           ▼
+┌─────────────────────────────┐
+│ 1. Find user by email       │
+│ 2. Generate random token    │
+│ 3. Hash token (SHA-256)     │
+│ 4. Save hashed token +      │
+│    expiry (1 hour default)  │
+│ 5. Send email with          │
+│    unhashed token           │
+└──────────┬──────────────────┘
+           │
+           ▼
+┌────────────────────────────┐
+│ User Receives Reset Email  │
+│ Contains reset link with   │
+│ token                      │
+└──────────┬─────────────────┘
+           │
+           ▼
+┌─────────────────────────────┐
+│ POST /auth/reset-password   │
+│ 1. Hash provided token      │
+│ 2. Find user by hashed      │
+│    token + check expiry     │
+│ 3. Validate token matches   │
+│ 4. Update password (hash)   │
+│ 5. Clear reset token fields │
+└──────────┬──────────────────┘
+           │
+           ▼
+┌────────────────────────────┐
+│ Password Reset Complete ✓  │
+│ User can login with new     │
+│ password                   │
+└────────────────────────────┘
+```
+
+**Security Features**:
+- Token hashed in database (SHA-256)
+- Time-limited tokens (1 hour default)
+- Token single-use (cleared after reset)
+- Rate limiting (3 requests/minute)
+- Retry logic in email service (3 attempts)
+
+---
+
+## 2. Order Creation Flow (Transactional)
+
+### Complete Order Creation Process
+
+```
+┌─────────────────────────────────────────┐
+│ POST /orders                            │
+│ Request:                                │
+│ {                                       │
+│   "pharmacyName": "City Pharmacy",      │
+│   "orderType": "delivery",              │
+│   "deliveryAddress": "456 Oak Ave"      │
+│ }                                       │
+└──────────────┬──────────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────────┐
+│ Step 1: Validation                      │
+│ ✓ Validate pharmacyName exists          │
+│ ✓ Validate orderType                    │
+│ ✓ If delivery: validate deliveryAddress │
+└──────────────┬──────────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────────┐
+│ Step 2: Load User's Cart                │
+│ - Find cart by userId                   │
+│ - Load cart items (eager)               │
+│ - Filter items by target pharmacy       │
+│ - Calculate total price                 │
+└──────────────┬──────────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────────┐
+│ Step 3: Start Database Transaction      │
+│ BEGIN TRANSACTION                       │
+└──────────────┬──────────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────────┐
+│ Step 4: Stock Validation & Locking      │
+│ For each cart item:                     │
+│   ┌───────────────────────────────┐    │
+│   │ 1. Find PharmacyMedicine      │    │
+│   │    with pessimistic_write lock │    │
+│   └──────────┬────────────────────┘    │
+│              │                          │
+│   ┌──────────▼────────────────────┐    │
+│   │ 2. Check stock quantity       │    │
+│   │    IF quantity < cartQuantity │    │
+│   │      → ROLLBACK               │    │
+│   │      → Throw Error            │    │
+│   └──────────┬────────────────────┘    │
+│              │                          │
+│   ┌──────────▼────────────────────┐    │
+│   │ 3. Calculate item price       │    │
+│   │    (use pharmacy medicine     │    │
+│   │     price or product price)   │    │
+│   └───────────────────────────────┘    │
+└──────────────┬──────────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────────┐
+│ Step 5: Create Order & OrderItems       │
+│ - Create Order entity                   │
+│ - Create OrderItem entities             │
+│ - Set status: 'pending'                 │
+│ - Set totalPrice                        │
+│ - Save to database                      │
+└──────────────┬──────────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────────┐
+│ Step 6: Deduct Inventory                │
+│ For each order item:                    │
+│   pharmacyMedicine.quantity -=          │
+│     orderItem.quantity                  │
+│   Save pharmacyMedicine                 │
+└──────────────┬──────────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────────┐
+│ Step 7: Remove Items from Cart          │
+│ - Delete ordered cart items             │
+│ - Keep items from other pharmacies      │
+└──────────────┬──────────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────────┐
+│ Step 8: Commit Transaction              │
+│ COMMIT TRANSACTION                      │
+└──────────────┬──────────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────────┐
+│ Step 9: Return Order                    │
+│ - Load order with relations             │
+│ - Return to client                      │
+└─────────────────────────────────────────┘
+```
+
+### Code Implementation
+
+```typescript
+async createOrder(user: User, dto: CreateOrderDto) {
+  // Step 1: Validation
+  const pharmacy = await this.pharmacyRepository.findOne({
+    where: { slug: slugify(dto.pharmacyName) },
+  });
+
+  if (!pharmacy) {
+    throw new NotFoundException('Pharmacy not found');
+  }
+
+  if (dto.orderType === 'delivery' && !dto.deliveryAddress) {
+    throw new BadRequestException('Delivery address required');
+  }
+
+  // Step 2: Load cart
+  const cart = await this.cartRepository.findOne({
+    where: { user: { id: user.id } },
+    relations: ['items', 'items.product', 'items.pharmacy'],
+  });
+
+  if (!cart || cart.items.length === 0) {
+    throw new BadRequestException('Cart is empty');
+  }
+
+  const cartItems = cart.items.filter(
+    (item) => item.pharmacy.id === pharmacy.id,
+  );
+
+  if (cartItems.length === 0) {
+    throw new BadRequestException('No items from this pharmacy in cart');
+  }
+
+  // Calculate total
+  let totalPrice = 0;
+  const orderItems: OrderItem[] = [];
+
+  // Step 3: Transaction
+  const queryRunner = this.dataSource.createQueryRunner();
+  await queryRunner.connect();
+  await queryRunner.startTransaction();
+
+  try {
+    // Step 4 & 5: Validate stock and create order
+    for (const cartItem of cartItems) {
+      // Pessimistic lock
+      const pharmacyMedicine = await queryRunner.manager.findOne(
+        PharmacyMedicine,
+        {
+          where: {
+            pharmacy: { id: pharmacy.id },
+            product: { id: cartItem.product.id },
+          },
+          lock: { mode: 'pessimistic_write' },
+        },
+      );
+
+      if (!pharmacyMedicine) {
+        throw new Error(`${cartItem.product.name} not found in pharmacy`);
+      }
+
+      if (pharmacyMedicine.quantity < cartItem.quantity) {
+        throw new Error(
+          `Insufficient stock for ${cartItem.product.name}`,
+        );
+      }
+
+      // Calculate price
+      const price = pharmacyMedicine.price || cartItem.product.price || 0;
+      totalPrice += price * cartItem.quantity;
+
+      // Create order item
+      const orderItem = new OrderItem();
+      orderItem.product = cartItem.product;
+      orderItem.quantity = cartItem.quantity;
+      orderItem.name = cartItem.productName;
+      orderItems.push(orderItem);
+    }
+
+    // Create order
+    const order = new Order();
+    order.user = user;
+    order.pharmacy = pharmacy;
+    order.orderType = dto.orderType;
+    order.deliveryAddress = dto.deliveryAddress;
+    order.items = orderItems;
+    order.totalPrice = totalPrice;
+    order.status = OrderStatus.PENDING;
+
+    await queryRunner.manager.save(order);
+
+    // Step 6: Deduct inventory
+    for (const cartItem of cartItems) {
+      const pharmacyMedicine = await queryRunner.manager.findOne(
+        PharmacyMedicine,
+        {
+          where: {
+            pharmacy: { id: pharmacy.id },
+            product: { id: cartItem.product.id },
+          },
+          lock: { mode: 'pessimistic_write' },
+        },
+      );
+
+      pharmacyMedicine.quantity -= cartItem.quantity;
+      await queryRunner.manager.save(pharmacyMedicine);
+    }
+
+    // Step 7: Remove from cart
+    await queryRunner.manager.delete(CartItem, {
+      cart: { id: cart.id },
+      pharmacy: { id: pharmacy.id },
+    });
+
+    // Step 8: Commit
+    await queryRunner.commitTransaction();
+
+    // Step 9: Return
+    return this.findOne(order.id, user);
+
+  } catch (error) {
+    // Rollback on error
+    await queryRunner.rollbackTransaction();
+    throw error;
+  } finally {
+    await queryRunner.release();
+  }
+}
+```
+
+### Transaction Guarantees
+
+**ACID Properties**:
+- ✅ **Atomicity**: All steps succeed or all fail
+- ✅ **Consistency**: Stock and orders remain consistent
+- ✅ **Isolation**: Pessimistic locks prevent concurrent modifications
+- ✅ **Durability**: Committed changes persist to database
+
+**Error Scenarios**:
+- ❌ Insufficient stock → Rollback entire transaction
+- ❌ Pharmacy not found → Return error before transaction
+- ❌ Database connection lost → Rollback automatically
+- ❌ Product removed from pharmacy → Rollback and notify user
+
+---
+
+## 3. Order Status Transition Flow
+
+### Status State Machine
+
+```
+                    ┌─────────────┐
+                    │  PENDING    │
+                    └──────┬──────┘
+                           │
+              ┌────────────┼────────────┐
+              │            │            │
+       (User/Admin)  (Pharmacist)  (Admin)
+         Cancel     Accept/Reject   Any
+              │            │            │
+              │     ┌──────┴──────┐     │
+              │     │             │     │
+              ▼     ▼             ▼     ▼
+        ┌──────────┐ ┌──────────┐ ┌──────────┐
+        │ CANCELED │ │ ACCEPTED │ │ REJECTED │
+        └──────────┘ └────┬─────┘ └──────────┘
+                          │
+                     (Pharmacist)
+                   Prepare/Deliver
+                          │
+                          ▼
+                    ┌───────────┐
+                    │ PREPARING │
+                    └─────┬─────┘
+                          │
+                     (Pharmacist)
+                     Start Delivery
+                          │
+                          ▼
+                    ┌─────────────┐
+                    │ IN_DELIVERY │
+                    └──────┬──────┘
+                           │
+                      (Pharmacist)
+                      Complete Delivery
+                           │
+                           ▼
+                     ┌──────────┐
+                     │DELIVERED │
+                     └──────────┘
+```
+
+### Transition Rules Implementation
+
+```typescript
+async updateOrderStatus(
+  orderId: string,
+  newStatus: OrderStatus,
+  user: User,
+) {
+  const order = await this.findOne(orderId, user);
+
+  // Validate transition based on user role
+  await this.validateTransition(order, newStatus, user);
+
+  // Update status
+  order.status = newStatus;
+
+  // Handle side effects
+  if (newStatus === OrderStatus.CANCELED || 
+      newStatus === OrderStatus.REJECTED) {
+    await this.restoreOrderItemsStock(order);
+  }
+
+  if (newStatus === OrderStatus.DELIVERED) {
+    order.deliveredAt = new Date();
+  }
+
+  return this.orderRepository.save(order);
+}
+
+private async validateTransition(
+  order: Order,
+  newStatus: OrderStatus,
+  user: User,
+) {
+  const currentStatus = order.status;
+
+  // User can only cancel pending orders
+  if (user.type === UserRole.USER) {
+    if (
+      currentStatus !== OrderStatus.PENDING ||
+      newStatus !== OrderStatus.CANCELED
+    ) {
+      throw new ForbiddenException(
+        'Users can only cancel pending orders',
+      );
+    }
+    return;
+  }
+
+  // Pharmacist transitions
+  if (user.type === UserRole.PHARMACIST) {
+    const allowedTransitions = {
+      [OrderStatus.PENDING]: [
+        OrderStatus.ACCEPTED,
+        OrderStatus.REJECTED,
+        OrderStatus.CANCELED,
+      ],
+      [OrderStatus.ACCEPTED]: [
+        OrderStatus.PREPARING,
+        OrderStatus.IN_DELIVERY,
+        OrderStatus.CANCELED,
+      ],
+      [OrderStatus.PREPARING]: [
+        OrderStatus.IN_DELIVERY,
+        OrderStatus.CANCELED,
+      ],
+      [OrderStatus.IN_DELIVERY]: [
+        OrderStatus.DELIVERED,
+        OrderStatus.CANCELED,
+      ],
+    };
+
+    if (!allowedTransitions[currentStatus]?.includes(newStatus)) {
+      throw new ForbiddenException(
+        `Invalid transition: ${currentStatus} → ${newStatus}`,
+      );
+    }
+    return;
+  }
+
+  // Admin has broader permissions
+  if (user.type === UserRole.ADMIN) {
+    const allowedTransitions = {
+      [OrderStatus.PENDING]: [
+        OrderStatus.ACCEPTED,
+        OrderStatus.REJECTED,
+        OrderStatus.PREPARING,
+        OrderStatus.IN_DELIVERY,
+        OrderStatus.DELIVERED,
+        OrderStatus.CANCELED,
+      ],
+      [OrderStatus.ACCEPTED]: [
+        OrderStatus.PREPARING,
+        OrderStatus.IN_DELIVERY,
+        OrderStatus.DELIVERED,
+        OrderStatus.CANCELED,
+      ],
+      [OrderStatus.PREPARING]: [
+        OrderStatus.IN_DELIVERY,
+        OrderStatus.DELIVERED,
+        OrderStatus.CANCELED,
+      ],
+      [OrderStatus.IN_DELIVERY]: [
+        OrderStatus.DELIVERED,
+        OrderStatus.CANCELED,
+      ],
+    };
+
+    if (!allowedTransitions[currentStatus]?.includes(newStatus)) {
+      throw new ForbiddenException(
+        `Invalid transition: ${currentStatus} → ${newStatus}`,
+      );
+    }
+    return;
+  }
+
+  throw new ForbiddenException('Unauthorized');
+}
+```
+
+### Inventory Restoration Flow
+
+```typescript
+async restoreOrderItemsStock(order: Order) {
+  const queryRunner = this.dataSource.createQueryRunner();
+  await queryRunner.connect();
+  await queryRunner.startTransaction();
+
+  try {
+    for (const item of order.items) {
+      // Find pharmacy medicine with lock
+      const pharmacyMedicine = await queryRunner.manager.findOne(
+        PharmacyMedicine,
+        {
+          where: {
+            pharmacy: { id: order.pharmacy.id },
+            product: { id: item.product.id },
+          },
+          lock: { mode: 'pessimistic_write' },
+        },
+      );
+
+      if (pharmacyMedicine) {
+        // Restore quantity
+        pharmacyMedicine.quantity += item.quantity;
+        await queryRunner.manager.save(pharmacyMedicine);
+      }
+    }
+
+    await queryRunner.commitTransaction();
+  } catch (error) {
+    await queryRunner.rollbackTransaction();
+    throw error;
+  } finally {
+    await queryRunner.release();
+  }
+}
+```
+
+---
+
+## 4. Emergency Order Smart Matching Flow
+
+### Algorithm Overview
+
+**Scoring Formula** (Maximum 100 points):
+
+```
+Total Score = Distance Score (0-50) + Rating Score (0-30) + Availability Score (0-20)
+
+Where:
+  Distance Score = GREATEST(0, 50 - (distance / max_distance) * 50)
+    - max_distance = 50,000 meters (50km)
+    - Closer pharmacies get higher scores
+  
+  Rating Score = (pharmacy.averageRating / 5) * 30
+    - 5-star rating → 30 points
+    - 0-star rating → 0 points
+  
+  Availability Score = 
+    - 20 points if product in stock (quantity > 0)
+    - 0 points if product not found or out of stock
+```
+
+### Complete Flow
+
+```
+┌─────────────────────────────────────────────┐
+│ POST /emergency-orders/create-smart         │
+│ {                                           │
+│   "requestedMedicine": "Insulin",           │
+│   "deliveryAddress": "456 Oak Ave",         │
+│   "latitude": 40.7128,                      │
+│   "longitude": -74.0060,                    │
+│   "additionalNotes": "Urgent",              │
+│   "priority": "high"                        │
+│ }                                           │
+└──────────────┬──────────────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────────────┐
+│ Step 1: Validate Location                   │
+│ ✓ latitude and longitude required           │
+│ ✓ Create PostGIS location point             │
+└──────────────┬──────────────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────────────┐
+│ Step 2: Find Matching Product               │
+│ - ILike search for medicine name            │
+│ - products.name ILIKE '%Insulin%'           │
+└──────────────┬──────────────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────────────┐
+│ Step 3: PostGIS Spatial Scoring Query       │
+│                                              │
+│ SELECT pharmacy, score calculation           │
+│ FROM pharmacies                              │
+│ WHERE:                                       │
+│   - is_active = true                         │
+│   - ST_DWithin(location, user, 50000m)       │
+│                                              │
+│ Calculate for each pharmacy:                 │
+│   - Distance score (0-50)                    │
+│   - Rating score (0-30)                      │
+│   - Availability score (0-20)                │
+│   - Total score                              │
+└──────────────┬──────────────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────────────┐
+│ Step 4: Select Top 5 Pharmacies             │
+│ - ORDER BY total_score DESC                 │
+│ - LIMIT 5                                   │
+│ - Return scored pharmacies                  │
+└──────────────┬──────────────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────────────┐
+│ Step 5: Create Emergency Order              │
+│ - Create EmergencyOrder entity              │
+│ - Link to user                              │
+│ - Set location (PostGIS geometry)           │
+│ - Set responseTimeout (15 min default)      │
+│ - Link to top 5 pharmacies (ManyToMany)     │
+└──────────────┬──────────────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────────────┐
+│ Step 6: Return Result                       │
+│ {                                           │
+│   "order": { ... },                         │
+│   "targettedPharmacies": [                  │
+│     {                                       │
+│       "pharmacy": { ... },                  │
+│       "score": 85.5,                        │
+│       "distanceScore": 45.2,                │
+│       "ratingScore": 25.8,                  │
+│       "availabilityScore": 20               │
+│     }                                       │
+│   ]                                         │
+│ }                                           │
+└─────────────────────────────────────────────┘
+```
+
+### PostGIS Scoring Query
+
+```typescript
+async findTargetedPharmacies(
+  medicineName: string,
+  latitude: number,
+  longitude: number,
+) {
+  const userLocation = `ST_SetSRID(ST_MakePoint(${longitude}, ${latitude}), 4326)`;
+  const maxDistance = 50000; // 50km
+
+  const query = `
+    SELECT 
+      p.id,
+      p.name,
+      p.address,
+      p.average_rating,
+      p.latitude,
+      p.longitude,
+      ST_Distance(p.location::geography, ${userLocation}::geography) as distance,
+      GREATEST(0, 50 - (ST_Distance(p.location::geography, ${userLocation}::geography) / ${maxDistance}) * 50) as distance_score,
+      (p.average_rating / 5) * 30 as rating_score,
+      CASE 
+        WHEN pm.quantity > 0 THEN 20 
+        ELSE 0 
+      END as availability_score,
+      (
+        GREATEST(0, 50 - (ST_Distance(p.location::geography, ${userLocation}::geography) / ${maxDistance}) * 50) +
+        (p.average_rating / 5) * 30 +
+        CASE 
+          WHEN pm.quantity > 0 THEN 20 
+          ELSE 0 
+        END
+      ) as total_score
+    FROM pharmacies p
+    LEFT JOIN pharmacy_medicines pm 
+      ON p.id = pm.pharmacy_id 
+      AND pm.product_id = (
+        SELECT id FROM products 
+        WHERE name ILIKE $1 
+        LIMIT 1
+      )
+    WHERE p.is_active = true
+      AND ST_DWithin(p.location::geography, ${userLocation}::geography, ${maxDistance})
+    ORDER BY total_score DESC
+    LIMIT 5
+  `;
+
+  const result = await this.pharmacyRepository.query(query, [
+    `%${medicineName}%`,
+  ]);
+
+  return result;
+}
+```
+
+### Emergency Order Response Flow
+
+```
+┌──────────────────────┐
+│ Emergency Order      │
+│ Created (pending)    │
+└──────┬───────────────┘
+       │
+       ├──────────────────────────────────┐
+       │                                  │
+       ▼                                  ▼
+┌──────────────────┐           ┌──────────────────────┐
+│ User Waits       │           │ Background Job       │
+│ For Response     │           │ Checks Every 60s     │
+└──────────────────┘           └──────────┬───────────┘
+                                          │
+                    ┌─────────────────────┤
+                    │
+                    ▼
+          ┌─────────────────────┐
+          │ Check:              │
+          │ responseTimeout <   │
+          │   current time?     │
+          └────┬────────────────┘
+               │
+          Yes  │  No
+          ┌────┴─────┐
+          │          │
+          ▼          │
+┌─────────────────┐  │
+│ Set status:     │  │
+│ NO_RESPONSE     │  │
+└─────────────────┘  │
+                     │
+                     ▼
+           ┌─────────────────────┐
+           │ Pharmacist Responds │
+           │ PUT /emergency-orders/:id/respond
+           │ {                   │
+           │   "response":       │
+           │     "accepted",     │
+           │   "rejectionReason" │
+           │     : "..."         │
+           │ }                   │
+           └────┬────────────────┘
+                │
+                ▼
+      ┌──────────────────┐
+      │ Create Response  │
+      │ - pharmacy link  │
+      │ - response type  │
+      │ - timestamp      │
+      └────┬─────────────┘
+           │
+           ├─ Accepted ──► Update order status
+           │                 to ACCEPTED
+           │                 Link acceptedPharmacy
+           │
+           └─ Rejected ──► Continue waiting
+                             for other responses
+```
+
+---
+
+## 5. Cart Management Flow
+
+### Add to Cart Flow
+
+```
+┌──────────────────────────────┐
+│ POST /cart/items             │
+│ {                            │
+│   "productId": "uuid",       │
+│   "pharmacyId": "uuid",      │
+│   "quantity": 2              │
+│ }                            │
+└──────────┬───────────────────┘
+           │
+           ▼
+┌──────────────────────────────┐
+│ Step 1: Validate Product     │
+│ - Product exists              │
+│ - Product is active           │
+└──────────┬───────────────────┘
+           │
+           ▼
+┌──────────────────────────────┐
+│ Step 2: Validate Pharmacy    │
+│ - Pharmacy exists             │
+│ - Pharmacy is active          │
+└──────────┬───────────────────┘
+           │
+           ▼
+┌──────────────────────────────┐
+│ Step 3: Check Stock          │
+│ - Find PharmacyMedicine       │
+│ - Verify quantity >= requested│
+└──────────┬───────────────────┘
+           │
+      ┌────┴─────┐
+      │          │
+  Sufficient  Insufficient
+      │          │
+      ▼          ▼
+┌──────────┐  ┌──────────────┐
+│ Continue │  │ Return 400   │
+│          │  │ Bad Request  │
+└────┬─────┘  └──────────────┘
+     │
+     ▼
+┌──────────────────────────────┐
+│ Step 4: Find or Create Cart  │
+│ - Try find user's cart        │
+│ - If not exists, create       │
+└──────────┬───────────────────┘
+           │
+           ▼
+┌──────────────────────────────┐
+│ Step 5: Check Uniqueness     │
+│ - Constraint: (cart, product, │
+│   pharmacy) must be unique    │
+│ - If exists, update quantity  │
+│ - If not, create new item     │
+└──────────┬───────────────────┘
+           │
+           ▼
+┌──────────────────────────────┐
+│ Step 6: Return Updated Cart  │
+│ - Load cart with items        │
+│ - Return to client            │
+└──────────────────────────────┘
+```
+
+### Update Cart Item Flow
+
+```
+┌──────────────────────────────┐
+│ PUT /cart/items/:productId   │
+│ ?pharmacyId=uuid             │
+│ { "quantity": 5 }            │
+└──────────┬───────────────────┘
+           │
+           ▼
+┌──────────────────────────────┐
+│ Step 1: Find Cart Item       │
+│ - By productId + pharmacyId   │
+└──────────┬───────────────────┘
+           │
+           ▼
+┌──────────────────────────────┐
+│ Step 2: Validate New Quantity│
+│ - Check PharmacyMedicine      │
+│   stock                       │
+│ - IF newQuantity > stock      │
+│     → Return 400 Error        │
+└──────────┬───────────────────┘
+           │
+           ▼
+┌──────────────────────────────┐
+│ Step 3: Update Quantity      │
+│ - cartItem.quantity =         │
+│     newQuantity               │
+│ - Save                        │
+└──────────┬───────────────────┘
+           │
+           ▼
+┌──────────────────────────────┐
+│ Step 4: Return Updated Cart  │
+└──────────────────────────────┘
+```
+
+### Cart to Order Flow
+
+```
+┌─────────────┐
+│ User Cart   │
+│ with items  │
+│ from        │
+│ multiple    │
+│ pharmacies  │
+└──────┬──────┘
+       │
+       ▼
+┌──────────────────────────────┐
+│ User Creates Order for       │
+│ Specific Pharmacy            │
+└──────────┬───────────────────┘
+           │
+           ▼
+┌──────────────────────────────┐
+│ Filter Cart Items by         │
+│ Target Pharmacy              │
+│ cartItems.filter(            │
+│   item.pharmacy === target   │
+│ )                            │
+└──────────┬───────────────────┘
+           │
+           ▼
+┌──────────────────────────────┐
+│ Create Order (Transactional) │
+│ - Deduct stock               │
+│ - Create order + items        │
+│ - Remove ordered items        │
+└──────────┬───────────────────┘
+           │
+           ▼
+┌──────────────────────────────┐
+│ Cart Still Contains Items    │
+│ from Other Pharmacies        │
+│ (Untouched)                  │
+└──────────────────────────────┘
+```
+
+---
+
+## 6. Pharmacy Management Flow
+
+### Pharmacy Creation Flow
+
+```
+┌──────────────────────────────┐
+│ Pharmacist Registers         │
+│ 1. Create user (pharmacist)  │
+│ 2. Verify email              │
+│ 3. Login                     │
+└──────────┬───────────────────┘
+           │
+           ▼
+┌──────────────────────────────┐
+│ POST /pharmacies             │
+│ {                            │
+│   "name": "City Pharmacy",   │
+│   "address": "123 Main St",  │
+│   "latitude": 40.7128,       │
+│   "longitude": -74.0060,     │
+│   "phone": "+1234567890",    │
+│   ...                        │
+│ }                            │
+└──────────┬───────────────────┘
+           │
+           ▼
+┌──────────────────────────────┐
+│ Create Pharmacy Entity       │
+│ - Auto-generate slug         │
+│ - Set PostGIS location       │
+│   setLocation()              │
+│ - Link to user               │
+└──────────┬───────────────────┘
+           │
+           ▼
+┌──────────────────────────────┐
+│ Save to Database             │
+└──────────┬───────────────────┘
+           │
+           ▼
+┌──────────────────────────────┐
+│ Pharmacy Created ✓           │
+└──────────────────────────────┘
+```
+
+### Inventory Management Flow
+
+```
+┌──────────────────────────────┐
+│ Add Existing Product to Stock│
+│ POST /pharmacies/me/products │
+│ {                            │
+│   "productId": "uuid",       │
+│   "quantity": 100,           │
+│   "price": 9.99,             │
+│   "expiryDate": "2027-...",  │
+│   "batchNumber": "BATCH123"  │
+│ }                            │
+└──────────┬───────────────────┘
+           │
+           ▼
+┌──────────────────────────────┐
+│ Create PharmacyMedicine      │
+│ - Link to pharmacy           │
+│ - Link to product            │
+│ - Set stock details          │
+└──────────┬───────────────────┘
+           │
+           ▼
+┌──────────────────────────────┐
+│ Stock Added ✓                │
+└──────────────────────────────┘
+```
+
+### Create New Product + Add to Stock
+
+```
+┌──────────────────────────────┐
+│ POST /pharmacies/me/products │
+│ /new                         │
+│ {                            │
+│   "name": "New Medicine",    │
+│   "type": "Medicine",        │
+│   "price": 19.99,            │
+│   "quantity": 50,            │
+│   ...                        │
+│ }                            │
+└──────────┬───────────────────┘
+           │
+           ▼
+┌──────────────────────────────┐
+│ Step 1: Create Product       │
+│ - Set createdBy = pharmacist │
+│ - Set isAdminCreated = false │
+│ - Generate slug              │
+└──────────┬───────────────────┘
+           │
+           ▼
+┌──────────────────────────────┐
+│ Step 2: Create PharmacyMedicine
+│ - Link to new product        │
+│ - Set initial quantity        │
+│ - Set price, expiry, etc     │
+└──────────┬───────────────────┘
+           │
+           ▼
+┌──────────────────────────────┐
+│ Product Created + Stock Added│
+│ ✓                            │
+└──────────────────────────────┘
+```
+
+### Pharmacy Rating System
+
+```
+┌──────────────────────┐
+│ User Rates Pharmacy  │
+│ POST /pharmacies/:id │
+│ /rate                │
+│ { "rating": 4.5 }    │
+└──────┬───────────────┘
+       │
+       ▼
+┌──────────────────────┐
+│ Create PharmacyReview│
+│ - Link to pharmacy   │
+│ - Link to user       │
+│ - Set rating         │
+└──────┬───────────────┘
+       │
+       ▼
+┌──────────────────────┐
+│ Recalculate Average  │
+│ Rating               │
+│ SELECT AVG(rating)   │
+│ FROM pharmacy_reviews│
+│ WHERE pharmacyId = ? │
+└──────┬───────────────┘
+       │
+       ▼
+┌──────────────────────┐
+│ Update pharmacy      │
+│ .averageRating       │
+└──────────────────────┘
+```
+
+---
+
+## 7. Chat & Communication Flow
+
+### REST API Message Flow
+
+```
+┌──────────────────────┐
+│ Send Message (REST)  │
+│ POST /chat           │
+│ {                    │
+│   "orderId": "uuid", │
+│   "content": "...",  │
+│   "imageUrl": "..."  │
+│ }                    │
+└──────┬───────────────┘
+       │
+       ▼
+┌──────────────────────┐
+│ Validate Access      │
+│ - User has access to  │
+│   order (owner,       │
+│    pharmacist, admin) │
+└──────┬───────────────┘
+       │
+       ▼
+┌──────────────────────┐
+│ Create ChatMessage   │
+│ - Validate content   │
+│   length (max 2000)  │
+│ - Save message       │
+└──────┬───────────────┘
+       │
+       ▼
+┌──────────────────────┐
+│ Return Message       │
+└──────────────────────┘
+```
+
+### WebSocket Real-time Flow
+
+```
+┌──────────────────────────────────────┐
+│ Client Connects to WebSocket         │
+│ io('http://host/chat', {             │
+│   auth: { token: 'Bearer JWT' }      │
+│ })                                   │
+└──────────────┬───────────────────────┘
+               │
+               ▼
+┌──────────────────────────────────────┐
+│ Gateway Authentication               │
+│ 1. Extract JWT from handshake        │
+│ 2. Verify token                      │
+│ 3. Attach user to client.data        │
+│ 4. Join user_{userId} room           │
+└──────────────┬───────────────────────┘
+               │
+               ▼
+┌──────────────────────────────────────┐
+│ Client Joins Order Room              │
+│ socket.emit('joinOrderRoom', {       │
+│   orderId: 'uuid'                    │
+│ })                                   │
+└──────────────┬───────────────────────┘
+               │
+               ▼
+┌──────────────────────────────────────┐
+│ Validate Order Access                │
+│ 1. Check user has access to order    │
+│ 2. If yes: join order_{orderId} room │
+│ 3. If no: reject                     │
+└──────────────┬───────────────────────┘
+               │
+               ▼
+┌──────────────────────────────────────┐
+│ Send Message via WebSocket           │
+│ socket.emit('sendMessage', {         │
+│   orderId: 'uuid',                   │
+│   content: 'Hello!'                  │
+│ })                                   │
+└──────────────┬───────────────────────┘
+               │
+               ▼
+┌──────────────────────────────────────┐
+│ Gateway Processes Message            │
+│ 1. Validate content length           │
+│ 2. Create ChatMessage in DB          │
+│ 3. Broadcast to order_{orderId} room │
+│    socket.to(`order_${orderId}`)     │
+│      .emit('newMessage', message)    │
+└──────────────┬───────────────────────┘
+               │
+               ▼
+┌──────────────────────────────────────┐
+│ All Clients in Order Room Receive    │
+│ socket.on('newMessage', (message) => │
+│   { /* Update UI */ }                │
+│ )                                    │
+└──────────────────────────────────────┘
+```
+
+---
+
+## 8. KafuPost Community Help Flow
+
+### Post Lifecycle
+
+```
+┌──────────────────────┐
+│ Create Post          │
+│ POST /kafu-posts     │
+│ {                    │
+│   "title": "...",    │
+│   "description":     │
+│     "...",           │
+│   "type":            │
+│     "Medicine        │
+│     Payment",        │
+│   "medicineName":    │
+│     "...",           │
+│   "areaName": "..."  │
+│ }                    │
+└──────┬───────────────┘
+       │
+       ▼
+┌──────────────────────┐
+│ Status: Open         │
+│ Visible to all users │
+│ in GET /kafu-posts   │
+└──────┬───────────────┘
+       │
+       ▼
+┌──────────────────────┐
+│ Another User Accepts │
+│ PUT /kafu-posts/:id  │
+│ /accept              │
+└──────┬───────────────┘
+       │
+       ▼
+┌──────────────────────┐
+│ Status: In Progress  │
+│ Helper assigned      │
+│ Post no longer in    │
+│ "open" listings      │
+└──────┬───────────────┘
+       │
+       ▼
+┌──────────────────────┐
+│ Helper Completes     │
+│ PUT /kafu-posts/:id  │
+│ /complete            │
+└──────┬───────────────┘
+       │
+       ▼
+┌──────────────────────┐
+│ Status: Completed    │
+│ Post closed          │
+└──────────────────────┘
+```
+
+### Alternative Paths
+
+```
+Open Post
+    │
+    ├─► Cancelled (by owner)
+    │
+    ├─► Expired (expiresAt passed)
+    │
+    └─► In Progress ──► Completed
+              │
+              └─► Cancelled (if needed)
+```
+
+---
+
+## 9. Used Medicine Tracking Flow
+
+### Add Used Medicine
+
+```
+┌──────────────────────────────┐
+│ POST /used-medicines         │
+│ {                            │
+│   "items": [                 │
+│     {                        │
+│       "productId": "uuid",   │
+│       "dosage": "500mg",     │
+│       "frequency":            │
+│         "3x daily",          │
+│       "startDate": "...",    │
+│       "endDate": "...",      │
+│       "reminderTime": "08:00"│
+│     }                        │
+│   ]                          │
+│ }                            │
+└──────────┬───────────────────┘
+           │
+           ▼
+┌──────────────────────────────┐
+│ Find or Create UsedMedicine  │
+│ - Check if user has tracker  │
+│ - If not, create             │
+└──────────┬───────────────────┘
+           │
+           ▼
+┌──────────────────────────────┐
+│ For Each Item:               │
+│ - Create UsedMedicineItem    │
+│ - Link to product            │
+│ - Set dosage, frequency, etc │
+└──────────┬───────────────────┘
+           │
+           ▼
+┌──────────────────────────────┐
+│ Return Updated Tracker       │
+└──────────────────────────────┘
+```
+
+### Update & History Tracking
+
+```
+┌──────────────────────────────┐
+│ Update Medicine Item         │
+│ PUT /used-medicines/:id      │
+└──────────┬───────────────────┘
+           │
+           ▼
+┌──────────────────────────────┐
+│ Before Update:               │
+│ - Capture current state       │
+│ - Create UsedMedicineHistory │
+│   entry with changes         │
+└──────────┬───────────────────┘
+           │
+           ▼
+┌──────────────────────────────┐
+│ Apply Updates                │
+│ - Save new values            │
+└──────────┬───────────────────┘
+           │
+           ▼
+┌──────────────────────────────┐
+│ History Preserved            │
+│ - All changes tracked        │
+│ - Audit trail maintained     │
+└──────────────────────────────┘
+```
+
+---
+
+## 10. Background Jobs & Scheduled Tasks
+
+### Emergency Order Timeout Job
+
+```typescript
+// Runs every 60 seconds
+setInterval(() => this.checkTimeouts(), 60000);
+
+async checkTimeouts() {
+  const now = new Date();
+
+  // Find expired pending orders
+  const expiredOrders = await this.emergencyOrderRepository.find({
+    where: {
+      status: EmergencyOrderStatus.PENDING,
+      responseTimeout: LessThan(now),
+    },
+  });
+
+  // Update each to NO_RESPONSE
+  for (const order of expiredOrders) {
+    order.status = EmergencyOrderStatus.NO_RESPONSE;
+    await this.emergencyOrderRepository.save(order);
+  }
+}
+```
+
+**Execution Flow**:
+
+```
+┌─────────────────────────┐
+│ Timer Triggers (60s)    │
+└──────┬──────────────────┘
+       │
+       ▼
+┌─────────────────────────┐
+│ Query Database          │
+│ Find pending orders     │
+│ where responseTimeout   │
+│ < current time          │
+└──────┬──────────────────┘
+       │
+       ├────── None Found ──► Do Nothing
+       │
+    Found
+       │
+       ▼
+┌─────────────────────────┐
+│ For Each Expired Order: │
+│ - Set status: NO_RESPONSE│
+│ - Save                  │
+└──────┬──────────────────┘
+       │
+       ▼
+┌─────────────────────────┐
+│ Log Results             │
+│ - Count of updated      │
+│ - Order IDs             │
+└─────────────────────────┘
+```
+
+---
+
+## 11. File Upload Flow
+
+### Cloudinary Upload Process
+
+```
+┌──────────────────────────────┐
+│ POST /upload                 │
+│ Content-Type: multipart/form │
+│ File: image (jpeg/png/jpg/   │
+│ gif, max 5MB)                │
+└──────────┬───────────────────┘
+           │
+           ▼
+┌──────────────────────────────┐
+│ Multer Validation            │
+│ - Check file type            │
+│ - Check file size (<= 5MB)   │
+└──────────┬───────────────────┘
+           │
+           ▼
+┌──────────────────────────────┐
+│ Upload Service               │
+│ - Read file from memory      │
+│ - Call Cloudinary API        │
+│ - Folder: my-app-uploads     │
+└──────────┬───────────────────┘
+           │
+           ▼
+┌──────────────────────────────┐
+│ Cloudinary Response          │
+│ - secure_url                 │
+│ - public_id                  │
+│ - format, width, height      │
+└──────────┬───────────────────┘
+           │
+           ▼
+┌──────────────────────────────┐
+│ Return to Client             │
+│ {                            │
+│   "url": "https://...",      │
+│   "publicId": "..."          │
+│ }                            │
+└──────────────────────────────┘
+```
+
+---
+
+## 12. Error Handling & Recovery
+
+### Global Exception Filter
+
+```typescript
+@Catch()
+export class AllExceptionsFilter implements ExceptionFilter {
+  catch(exception: unknown, host: ArgumentsHost) {
+    const ctx = host.switchToHttp();
+    const request = ctx.getRequest();
+    const response = ctx.getResponse();
+
+    // Generate correlation ID
+    const correlationId = uuid();
+
+    // Determine status code
+    const status = exception instanceof HttpException
+      ? exception.getStatus()
+      : HttpStatus.INTERNAL_SERVER_ERROR;
+
+    // Get message
+    const message = exception instanceof HttpException
+      ? exception.message
+      : 'Internal server error';
+
+    // Log with sanitized data
+    this.logger.error(
+      `${request.method} ${request.url}`,
+      JSON.stringify({
+        correlationId,
+        statusCode: status,
+        message,
+        stack: exception instanceof Error ? exception.stack : undefined,
+      }),
+    );
+
+    // Return error response
+    response.status(status).json({
+      statusCode: status,
+      timestamp: new Date().toISOString(),
+      path: request.url,
+      correlationId,
+      message,
+    });
+  }
+}
+```
+
+### Error Recovery Patterns
+
+**Transaction Rollback**:
+```typescript
+try {
+  await queryRunner.startTransaction();
+  // ... operations
+  await queryRunner.commitTransaction();
+} catch (error) {
+  await queryRunner.rollbackTransaction();
+  throw error;
+} finally {
+  await queryRunner.release();
+}
+```
+
+**Graceful Email Failure**:
+```typescript
+try {
+  await this.mailService.sendVerificationEmail(user.email, code);
+} catch (error) {
+  // Log error but don't fail registration
+  this.logger.error('Failed to send verification email', error.stack);
+  // User still created, can request resend
+}
+```
+
+**Stock Validation Recovery**:
+```typescript
+if (pharmacyMedicine.quantity < requestedQuantity) {
+  // Rollback transaction
+  await queryRunner.rollbackTransaction();
+  
+  // Return specific error
+  throw new BadRequestException(
+    `Insufficient stock for ${productName}. Available: ${pharmacyMedicine.quantity}`
+  );
+}
+```
+
+---
+
+## Performance Optimization Patterns
+
+### Database Query Optimization
+
+**Eager Loading**:
+```typescript
+// Load cart with items in one query
+const cart = await this.cartRepository.findOne({
+  where: { user: { id: userId } },
+  relations: ['items', 'items.product', 'items.pharmacy'],
+});
+```
+
+**Selective Loading**:
+```typescript
+// Only load necessary relations
+const order = await this.orderRepository.findOne({
+  where: { id: orderId },
+  relations: ['items', 'pharmacy'], // Don't load user unless needed
+});
+```
+
+### Caching Opportunities (Future)
+
+```typescript
+// Categories rarely change
+const categories = await this.cache.get('categories');
+if (!categories) {
+  categories = await this.categoryRepository.find();
+  await this.cache.set('categories', categories, 3600); // 1 hour
+}
+```
+
+---
+
+## Monitoring Points
+
+### Key Metrics to Track
+
+1. **Order Creation Time**: Transaction duration
+2. **Stock Validation Failures**: Insufficient stock rate
+3. **Emergency Response Rate**: % of orders responded to in time
+4. **Cart Abandonment**: Carts not converted to orders
+5. **API Response Times**: Per-endpoint performance
+6. **Error Rates**: 4xx and 5xx frequencies
+7. **WebSocket Connections**: Active chat users
+8. **Background Job Execution**: Timeout job effectiveness
+
+### Alert Conditions
+
+- Order creation failures > 5%
+- Emergency orders with no response > 50%
+- API response time > 2 seconds
+- Database connection pool exhaustion
+- Background job crashes
+
+---
+
+## Testing Workflows
+
+### Integration Test Example
+
+```typescript
+describe('Order Creation Flow', () => {
+  it('should create order and deduct stock', async () => {
+    // Setup: Create user, pharmacy, product, cart
+    const user = await createTestUser();
+    const pharmacy = await createTestPharmacy();
+    const product = await createTestProduct();
+    
+    // Add stock
+    await addPharmacyStock(pharmacy, product, 100);
+    
+    // Add to cart
+    await addToCart(user, product, pharmacy, 5);
+    
+    // Create order
+    const order = await request(app)
+      .post('/orders')
+      .set('Authorization', `Bearer ${user.token}`)
+      .send({
+        pharmacyName: pharmacy.name,
+        orderType: 'reservation',
+      });
+    
+    expect(order.status).toBe(201);
+    expect(order.body.data.status).toBe('pending');
+    
+    // Verify stock deducted
+    const stock = await getPharmacyStock(pharmacy, product);
+    expect(stock.quantity).toBe(95);
+  });
+});
+```

@@ -54,6 +54,9 @@ export class Order {
   @Column({ type: 'varchar', nullable: true })
   deliveryAddress?: string | null;
 
+  @Column({ type: 'varchar', nullable: true })
+  prescriptionImageUrl?: string | null;
+
   @Column({ type: 'enum', enum: OrderStatus, default: OrderStatus.PENDING })
   status: OrderStatus;
 

@@ -38,8 +38,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const requestQuery = this.sanitizeForLog((request as any).query);
     const requestParams = this.sanitizeForLog((request as any).params);
     const userId =
-      (typeof (request as any).user?.sub === 'string' && (request as any).user.sub) ||
-      (typeof (request as any).user?.id === 'string' && (request as any).user.id) ||
+      (typeof (request as any).user?.sub === 'string' &&
+        (request as any).user.sub) ||
+      (typeof (request as any).user?.id === 'string' &&
+        (request as any).user.id) ||
       undefined;
 
     this.logger.error(
@@ -79,7 +81,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     const walk = (v: unknown): unknown => {
       if (v === null || v === undefined) return v;
-      if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+      if (
+        typeof v === 'string' ||
+        typeof v === 'number' ||
+        typeof v === 'boolean'
+      ) {
         return v;
       }
       if (v instanceof Date) return v.toISOString();

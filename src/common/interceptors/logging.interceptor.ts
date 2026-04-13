@@ -80,7 +80,11 @@ export class LoggingInterceptor implements NestInterceptor {
 
     const walk = (v: unknown): unknown => {
       if (v === null || v === undefined) return v;
-      if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+      if (
+        typeof v === 'string' ||
+        typeof v === 'number' ||
+        typeof v === 'boolean'
+      ) {
         return v;
       }
       if (v instanceof Date) return v.toISOString();

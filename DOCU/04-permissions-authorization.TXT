@@ -1,0 +1,1204 @@
+# Permissions & Authorization System
+
+## Overview
+
+The MediAid Backend implements a multi-layered authorization system combining:
+1. **JWT-based Authentication**: Token-based identity verification
+2. **Role-Based Access Control (RBAC)**: Three distinct user roles with specific permissions
+3. **Resource Ownership Checks**: Fine-grained access control at the service level
+4. **Endpoint-Level Guards**: Route-specific authorization via decorators
+
+## Authentication Flow
+
+### 1. Token Generation
+
+```
+User Registration → Email Verification → Login → JWT Token
+```
+
+**Step 1: Registration**
+```
+POST /users/register
+{
+  "email": "user@example.com",
+  "password": "secure_password",
+  "type": "user"
+}
+→ Creates user with isVerified: false
+→ Generates 6-digit verification code
+→ Sends verification email
+```
+
+**Step 2: Email Verification**
+```
+POST /auth/verify-email
+{
+  "email": "user@example.com",
+  "code": "123456"
+}
+→ Validates code
+→ Sets isVerified: true
+```
+
+**Step 3: Login**
+```
+POST /auth/login
+{
+  "email": "user@example.com",
+  "password": "secure_password"
+}
+→ Validates credentials AND isVerified flag
+→ Generates JWT token
+```
+
+### 2. JWT Token Structure
+
+**Payload**:
+```json
+{
+  "sub": "user-uuid-here",
+  "email": "user@example.com",
+  "role": "user",
+  "iat": 1712912400,
+  "exp": 1713776400
+}
+```
+
+**Claims**:
+- `sub` (Subject): User ID
+- `email`: User email address
+- `role`: User type (admin/user/pharmacist)
+- `iat` (Issued At): Token creation timestamp
+- `exp` (Expiration): Token expiration timestamp
+
+**Configuration**:
+- **Secret**: `JWT_SECRET` environment variable (REQUIRED, no weak fallback)
+- **Expiration**: `JWT_EXPIRES_IN` environment variable (default: 7 days, configurable)
+- **Algorithm**: HS256 (HMAC with SHA-256)
+
+### 3. Token Validation
+
+**JwtStrategy** (`src/modules/auth/jwt.strategy.ts`):
+
+```typescript
+@Injectable()
+export class JwtStrategy extends PassportStrategy(Strategy) {
+  constructor() {
+    super({
+      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      ignoreExpiration: false,
+      secretOrKey: process.env.JWT_SECRET,
+    });
+  }
+
+  async validate(payload: any) {
+    // Load user from database by ID
+    const user = await this.usersService.findOne(payload.sub);
+    
+    // Return user object (attached to req.user)
+    return {
+      id: user.id,
+      email: user.email,
+      type: user.type,
+    };
+  }
+}
+```
+
+**Process**:
+1. Extract Bearer token from `Authorization` header
+2. Verify token signature and expiration
+3. Decode payload
+4. Load user from database
+5. Attach user to `req.user`
+
+---
+
+## Role-Based Access Control (RBAC)
+
+### User Roles
+
+The system defines three distinct roles in the `UserRole` enum:
+
+```typescript
+export enum UserRole {
+  ADMIN = 'admin',
+  USER = 'user',
+  PHARMACIST = 'pharmacist',
+}
+```
+
+### Role Descriptions
+
+| Role | Description | Access Level |
+|------|-------------|--------------|
+| **admin** | System administrators | Full access to all resources, administrative CRUD operations |
+| **user** | Regular customers | Browse, purchase, manage personal data, community features |
+| **pharmacist** | Pharmacy owners | Manage pharmacy, inventory, respond to orders |
+
+### RolesGuard Implementation
+
+**Guard** (`src/common/guards/roles.guard.ts`):
+
+```typescript
+@Injectable()
+export class RolesGuard implements CanActivate {
+  canActivate(context: ExecutionContext): boolean {
+    // Get required roles from @Roles() decorator metadata
+    const requiredRoles = this.reflector.getAllAndOverride<UserRole[]>('roles', [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    
+    // If no roles specified, allow access (if authenticated)
+    if (!requiredRoles) {
+      return true;
+    }
+    
+    // Get user from request (attached by JwtStrategy)
+    const request = context.switchToHttp().getRequest();
+    const user = request.user;
+    
+    // Check if user role matches any required role
+    return requiredRoles.some((role) => user.type === role);
+  }
+}
+```
+
+**Usage**:
+
+```typescript
+@UseGuards(AuthGuard('jwt'), RolesGuard)
+@Roles(UserRole.ADMIN)
+@Post('products')
+createProduct(@Body() dto: CreateProductDto) {
+  // Only admins can access
+}
+```
+
+### @Roles Decorator
+
+**Decorator** (`src/common/guards/roles.decorator.ts`):
+
+```typescript
+export function Roles(...roles: UserRole[]) {
+  return SetMetadata('roles', roles);
+}
+```
+
+**Usage Patterns**:
+
+```typescript
+// Single role
+@Roles(UserRole.ADMIN)
+
+// Multiple roles (OR logic)
+@Roles(UserRole.ADMIN, UserRole.PHARMACIST)
+```
+
+---
+
+## Authorization Levels
+
+### Level 1: Public Endpoints
+
+No authentication required.
+
+**Examples**:
+- `GET /` (health check)
+- `POST /users/register`
+- `POST /auth/login`
+- `GET /categories`
+- `GET /products`
+- `GET /pharmacies`
+
+**Implementation**:
+```typescript
+@Get()
+findAll() {
+  return this.service.findAll();
+}
+```
+
+---
+
+### Level 2: Authenticated Endpoints
+
+Valid JWT required, any role accepted.
+
+**Examples**:
+- `GET /users/me`
+- `GET /cart`
+- `GET /orders/me`
+- `POST /cart/items`
+
+**Implementation**:
+```typescript
+@UseGuards(AuthGuard('jwt'))
+@Get('cart')
+getCart(@CurrentUser() user: User) {
+  return this.cartService.getCart(user.id);
+}
+```
+
+---
+
+### Level 3: Role-Restricted Endpoints
+
+Valid JWT + specific role required.
+
+**Admin-Only Endpoints**:
+- `POST /categories` (create category)
+- `PUT /categories/:id` (update category)
+- `DELETE /categories/:id` (delete category)
+- `POST /products` (create product)
+- `PUT /products/:id` (update product)
+- `DELETE /products/:id` (delete product)
+- `GET /users` (list all users)
+- `GET /users/:id` (get user by ID)
+
+**Implementation**:
+```typescript
+@UseGuards(AuthGuard('jwt'), RolesGuard)
+@Roles(UserRole.ADMIN)
+@Post('categories')
+createCategory(@Body() dto: CreateCategoryDto) {
+  return this.categoryService.create(dto);
+}
+```
+
+**Pharmacist-Only Endpoints**:
+- `POST /pharmacies` (create pharmacy)
+- `PUT /pharmacies/me` (update my pharmacy)
+- `GET /pharmacies/me` (get my pharmacy)
+- `GET /pharmacies/me/orders` (get pharmacy orders)
+- `POST /pharmacies/me/products` (add product to stock)
+- `POST /pharmacies/me/products/new` (create + add product)
+- `GET /pharmacies/me/expiring-medicines` (expiring stock)
+- `GET /pharmacies/me/low-stock` (low stock alert)
+- `GET /orders/pharmacy` (pharmacy incoming orders)
+- `GET /emergency-orders/pharmacy/requests` (emergency requests)
+- `PUT /emergency-orders/:id/respond` (respond to emergency)
+
+**Implementation**:
+```typescript
+@UseGuards(AuthGuard('jwt'), RolesGuard)
+@Roles(UserRole.PHARMACIST)
+@Post('pharmacies')
+createPharmacy(@CurrentUser() user: User, @Body() dto: CreatePharmacyDto) {
+  dto.userId = user.id;
+  return this.pharmacyService.create(dto);
+}
+```
+
+**Multi-Role Access**:
+```typescript
+@UseGuards(AuthGuard('jwt'), RolesGuard)
+@Roles(UserRole.ADMIN, UserRole.PHARMACIST)
+@Get('restricted-resource')
+getRestrictedResource() {
+  // Both admins and pharmacists can access
+}
+```
+
+---
+
+### Level 4: Ownership-Based Access Control
+
+Valid JWT + resource ownership verification.
+
+**Examples**:
+- `PATCH /users/:id` (update user - owner or admin)
+- `DELETE /users/:id` (delete user - owner or admin)
+- `GET /orders/:orderId` (get order - owner, pharmacist, or admin)
+- `PUT /orders/:orderId/status` (update order status - role-based transitions)
+- `DELETE /kafu-posts/:id` (delete post - owner or admin)
+
+**Implementation** (Order Service):
+
+```typescript
+async findOne(orderId: string, user: User) {
+  const order = await this.orderRepository.findOne({
+    where: { id: orderId },
+    relations: ['items', 'user', 'pharmacy'],
+  });
+
+  if (!order) {
+    throw new NotFoundException('Order not found');
+  }
+
+  // Ownership check: user must be owner, pharmacy owner, or admin
+  if (
+    order.user.id !== user.id &&
+    order.pharmacy.user.id !== user.id &&
+    user.type !== UserRole.ADMIN
+  ) {
+    throw new ForbiddenException('Access denied');
+  }
+
+  return order;
+}
+```
+
+**Implementation** (User Service):
+
+```typescript
+async update(userId: string, updateUserDto: UpdateUserDto, currentUser: User) {
+  // Only owner or admin can update
+  if (userId !== currentUser.id && currentUser.type !== UserRole.ADMIN) {
+    throw new ForbiddenException('Access denied');
+  }
+
+  return this.userRepository.save({ id: userId, ...updateUserDto });
+}
+```
+
+---
+
+## Order Status Transition System
+
+### Status Enum
+
+```typescript
+export enum OrderStatus {
+  PENDING = 'pending',
+  ACCEPTED = 'accepted',
+  REJECTED = 'rejected',
+  PREPARING = 'preparing',
+  IN_DELIVERY = 'in_delivery',
+  DELIVERED = 'delivered',
+  CANCELED = 'canceled',
+}
+```
+
+### Transition Rules by Role
+
+The system implements a strict state machine with role-based transition permissions:
+
+#### User (Customer) Permissions
+
+| From Status | Can Transition To | Action |
+|-------------|-------------------|--------|
+| `pending` | `canceled` | Cancel own pending order |
+| Other | ❌ No transitions | Users cannot modify other statuses |
+
+**Implementation**:
+```typescript
+if (user.type === UserRole.USER) {
+  if (order.status !== OrderStatus.PENDING) {
+    throw new ForbiddenException('Users can only cancel pending orders');
+  }
+  newStatus = OrderStatus.CANCELED;
+}
+```
+
+#### Pharmacist Permissions
+
+| From Status | Can Transition To | Action |
+|-------------|-------------------|--------|
+| `pending` | `accepted`, `rejected`, `canceled` | Process incoming order |
+| `accepted` | `preparing`, `in_delivery`, `canceled` | Advance order |
+| `preparing` | `in_delivery`, `canceled` | Mark as preparing |
+| `in_delivery` | `delivered`, `canceled` | Mark as in delivery |
+| Other | ❌ No transitions | Cannot modify delivered/canceled orders |
+
+**Implementation**:
+```typescript
+if (user.type === UserRole.PHARMACIST) {
+  const allowedTransitions = {
+    [OrderStatus.PENDING]: [OrderStatus.ACCEPTED, OrderStatus.REJECTED, OrderStatus.CANCELED],
+    [OrderStatus.ACCEPTED]: [OrderStatus.PREPARING, OrderStatus.IN_DELIVERY, OrderStatus.CANCELED],
+    [OrderStatus.PREPARING]: [OrderStatus.IN_DELIVERY, OrderStatus.CANCELED],
+    [OrderStatus.IN_DELIVERY]: [OrderStatus.DELIVERED, OrderStatus.CANCELED],
+  };
+
+  if (!allowedTransitions[order.status]?.includes(newStatus)) {
+    throw new ForbiddenException(`Invalid status transition from ${order.status} to ${newStatus}`);
+  }
+}
+```
+
+#### Admin Permissions
+
+| From Status | Can Transition To | Action |
+|-------------|-------------------|--------|
+| `pending` | `accepted`, `rejected`, `preparing`, `in_delivery`, `delivered`, `canceled` | Full override |
+| `accepted` | `preparing`, `in_delivery`, `delivered`, `canceled` | Advance order |
+| `preparing` | `in_delivery`, `delivered`, `canceled` | Advance order |
+| `in_delivery` | `delivered`, `canceled` | Complete or cancel |
+| Other | ✅ Most transitions | Admins have broadest permissions |
+
+**Implementation**:
+```typescript
+if (user.type === UserRole.ADMIN) {
+  const allowedTransitions = {
+    [OrderStatus.PENDING]: [
+      OrderStatus.ACCEPTED,
+      OrderStatus.REJECTED,
+      OrderStatus.PREPARING,
+      OrderStatus.IN_DELIVERY,
+      OrderStatus.DELIVERED,
+      OrderStatus.CANCELED,
+    ],
+    [OrderStatus.ACCEPTED]: [
+      OrderStatus.PREPARING,
+      OrderStatus.IN_DELIVERY,
+      OrderStatus.DELIVERED,
+      OrderStatus.CANCELED,
+    ],
+    [OrderStatus.PREPARING]: [OrderStatus.IN_DELIVERY, OrderStatus.DELIVERED, OrderStatus.CANCELED],
+    [OrderStatus.IN_DELIVERY]: [OrderStatus.DELIVERED, OrderStatus.CANCELED],
+  };
+
+  if (!allowedTransitions[order.status]?.includes(newStatus)) {
+    throw new ForbiddenException(`Invalid status transition`);
+  }
+}
+```
+
+### State Machine Diagram
+
+```
+                  ┌──────────┐
+                  │ PENDING  │
+                  └────┬─────┘
+                       │
+           ┌───────────┼────────────┐
+           │           │            │
+      (User/Pharm/     │      (Pharmacist)
+       Admin)          │      (Reject)
+           │           │            │
+           ▼           ▼            ▼
+     ┌──────────┐  ┌──────────┐  ┌──────────┐
+     │ CANCELED │  │ ACCEPTED │  │ REJECTED │
+     └──────────┘  └────┬─────┘  └──────────┘
+                        │
+                        │ (Pharmacist/Admin)
+                        │
+                        ▼
+                  ┌───────────┐
+                  │ PREPARING │
+                  └─────┬─────┘
+                        │
+                        │ (Pharmacist/Admin)
+                        │
+                        ▼
+                  ┌─────────────┐
+                  │ IN_DELIVERY │
+                  └──────┬──────┘
+                         │
+                         │ (Pharmacist/Admin)
+                         │
+                         ▼
+                   ┌──────────┐
+                   │DELIVERED │
+                   └──────────┘
+```
+
+### Inventory Restoration
+
+When orders are canceled or rejected, inventory is automatically restored:
+
+```typescript
+async restoreOrderItemsStock(order: Order) {
+  for (const item of order.items) {
+    // Find pharmacy medicine with pessimistic lock
+    const pharmacyMedicine = await this.pharmacyMedicineRepository.findOne({
+      where: {
+        pharmacy: { id: order.pharmacy.id },
+        product: { id: item.product.id },
+      },
+      lock: { mode: 'pessimistic_write' },
+    });
+
+    if (pharmacyMedicine) {
+      // Restore quantity
+      pharmacyMedicine.quantity += item.quantity;
+      await this.pharmacyMedicineRepository.save(pharmacyMedicine);
+    }
+  }
+}
+```
+
+---
+
+## Emergency Order Authorization
+
+### Status Enum
+
+```typescript
+export enum EmergencyOrderStatus {
+  PENDING = 'pending',
+  ACCEPTED = 'accepted',
+  FULFILLED = 'fulfilled',
+  CANCELED = 'canceled',
+  NO_RESPONSE = 'no_response',
+}
+```
+
+### Response Permissions
+
+| Action | Allowed Roles | Conditions |
+|--------|---------------|------------|
+| Create emergency order | Any authenticated user | Must provide location |
+| View own emergency orders | Any authenticated user | Ownership check |
+| Respond to emergency | Pharmacist only | Must be targeted pharmacy |
+| Cancel emergency | Order owner | Only if pending |
+| Fulfill emergency order | Order owner | Marks as fulfilled |
+
+### Timeout Mechanism
+
+**Background Job** (`src/common/jobs/order-timeout.job.ts`):
+
+```typescript
+@Injectable()
+export class OrderTimeoutJob {
+  private readonly CHECK_INTERVAL = 60000; // 60 seconds
+
+  constructor(private emergencyOrderService: EmergencyOrderService) {
+    // Run every 60 seconds
+    setInterval(() => this.checkTimeouts(), this.CHECK_INTERVAL);
+  }
+
+  private async checkTimeouts() {
+    const now = new Date();
+
+    // Find expired pending orders
+    const expiredOrders = await this.emergencyOrderRepository.find({
+      where: {
+        status: EmergencyOrderStatus.PENDING,
+        responseTimeout: LessThan(now),
+      },
+    });
+
+    // Mark as no_response
+    for (const order of expiredOrders) {
+      order.status = EmergencyOrderStatus.NO_RESPONSE;
+      await this.emergencyOrderRepository.save(order);
+    }
+  }
+}
+```
+
+**Timeout Configuration**:
+- Default timeout: 15 minutes (`ORDER_CONSTANTS.DEFAULT_RESPONSE_TIMEOUT_MINUTES`)
+- Check frequency: Every 60 seconds
+- Expired status: `NO_RESPONSE`
+
+---
+
+## Chat Access Control
+
+### REST API Authorization
+
+**Message Sending**:
+```typescript
+async sendMessage(user: User, dto: CreateChatMessageDto) {
+  // Verify user has access to the order
+  const order = await this.orderService.findOne(dto.orderId, user);
+
+  // Create message
+  const message = await this.chatMessageRepository.save({
+    order,
+    sender: user,
+    content: dto.content,
+    imageUrl: dto.imageUrl,
+  });
+
+  return message;
+}
+```
+
+### WebSocket Gateway Authorization
+
+**Connection Authentication**:
+
+```typescript
+@WebSocketGateway({
+  namespace: 'chat',
+  cors: { origin: '*' },
+})
+export class ChatGateway {
+  @WebSocketServer()
+  server: Server;
+
+  async handleConnection(client: Socket) {
+    // Extract JWT from handshake
+    const token = client.handshake.auth?.token?.replace('Bearer ', '');
+    
+    if (!token) {
+      client.disconnect();
+      return;
+    }
+
+    try {
+      // Verify token
+      const payload = this.jwtService.verify(token);
+      client.data.user = payload;
+      
+      // Join user's personal room
+      client.join(`user_${payload.sub}`);
+    } catch (error) {
+      client.disconnect();
+    }
+  }
+}
+```
+
+**Order Room Access**:
+
+```typescript
+@SubscribeMessage('joinOrderRoom')
+async handleJoinOrderRoom(client: Socket, payload: { orderId: string }) {
+  const userId = client.data.user.sub;
+
+  // Verify user has access to order
+  const hasAccess = await this.orderService.hasOrderAccess(payload.orderId, userId);
+
+  if (!hasAccess) {
+    return { success: false, message: 'Access denied' };
+  }
+
+  // Join order room
+  client.join(`order_${payload.orderId}`);
+  return { success: true, message: 'Joined room' };
+}
+```
+
+---
+
+## Admin Bootstrap Security
+
+### Admin Creation Endpoint
+
+**Security Measures**:
+
+```typescript
+@Post('admin')
+@Throttle({ default: { limit: 3, ttl: 60000 } })
+async createAdmin(@Body() dto: CreateAdminDto) {
+  // DISABLED in production
+  if (process.env.NODE_ENV === 'production') {
+    throw new ForbiddenException('Admin creation disabled in production');
+  }
+
+  // Require secret key
+  if (dto.secretKey !== process.env.SECRET_KEY_ADMIN) {
+    throw new ForbiddenException('Invalid secret key');
+  }
+
+  return this.userService.createAdmin(dto);
+}
+```
+
+**Protection Layers**:
+1. **Environment Check**: Disabled in production
+2. **Secret Key**: Requires `SECRET_KEY_ADMIN` value
+3. **Rate Limiting**: 3 requests/minute
+4. **One-Time Use**: Should be disabled after initial admin creation
+
+---
+
+## Input Validation & Security
+
+### Global ValidationPipe
+
+**Configuration** (`src/main.ts`):
+
+```typescript
+app.useGlobalPipes(
+  new ValidationPipe({
+    whitelist: true,           // Strip non-whitelisted properties
+    forbidNonWhitelisted: true, // Reject requests with non-whitelisted properties
+    transform: true,            // Transform payloads to DTO instances
+    transformOptions: {
+      enableImplicitConversion: true,
+    },
+  }),
+);
+```
+
+### DTO Validation Examples
+
+**CreateUserDto**:
+
+```typescript
+export class CreateUserDto {
+  @IsString()
+  @IsNotEmpty()
+  username: string;
+
+  @IsEmail()
+  email: string;
+
+  @IsString()
+  @MinLength(8)
+  @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/, {
+    message: 'Password must contain uppercase, lowercase, and number',
+  })
+  password: string;
+
+  @IsEnum(UserRole)
+  @IsOptional()
+  type?: UserRole;
+
+  @IsNumber()
+  @IsOptional()
+  latitude?: number;
+
+  @IsNumber()
+  @IsOptional()
+  longitude?: number;
+}
+```
+
+### Sensitive Data Redaction
+
+**LoggingInterceptor** redacts sensitive fields:
+
+```typescript
+const sensitiveKeys = ['password', 'token', 'secret', 'authorization', 'resetPasswordToken'];
+
+function sanitizeObject(obj: any): any {
+  const sanitized = { ...obj };
+  for (const key of sensitiveKeys) {
+    if (sanitized[key]) {
+      sanitized[key] = '***REDACTED***';
+    }
+  }
+  return sanitized;
+}
+```
+
+---
+
+## Rate Limiting & Throttling
+
+### Global Throttling
+
+**Configuration**:
+
+```typescript
+@Module({
+  imports: [
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60000,  // 1 minute
+        limit: 10,   // 10 requests
+      },
+    ]),
+  ],
+})
+export class AppModule {}
+```
+
+### Endpoint-Specific Throttling
+
+**Auth Endpoints**:
+
+```typescript
+@Post('login')
+@Throttle({ default: { limit: 5, ttl: 60000 } })
+async login(@Body() dto: LoginDto) {
+  // Login logic
+}
+
+@Post('request-password-reset')
+@Throttle({ default: { limit: 3, ttl: 60000 } })
+async requestPasswordReset(@Body() dto: RequestPasswordResetDto) {
+  // Reset logic
+}
+```
+
+---
+
+## Password Security
+
+### Hashing Strategy
+
+**Algorithm**: bcrypt
+**Cost Factor**: 12 (2^12 = 4096 rounds)
+
+**Hashing** (User Entity):
+
+```typescript
+@Entity()
+export class User {
+  @BeforeInsert()
+  @BeforeUpdate()
+  async hashPassword() {
+    if (this.password) {
+      this.password = await bcrypt.hash(this.password, 12);
+    }
+  }
+}
+```
+
+**Verification** (Auth Service):
+
+```typescript
+async login(dto: LoginDto) {
+  const user = await this.userService.findByEmail(dto.email);
+
+  if (!user) {
+    throw new UnauthorizedException('Invalid credentials');
+  }
+
+  const isPasswordValid = await bcrypt.compare(dto.password, user.password);
+
+  if (!isPasswordValid) {
+    throw new UnauthorizedException('Invalid credentials');
+  }
+
+  if (!user.isVerified) {
+    throw new UnauthorizedException('Email not verified');
+  }
+
+  // Generate JWT token
+  const payload = { sub: user.id, email: user.email, role: user.type };
+  return {
+    access_token: this.jwtService.sign(payload),
+  };
+}
+```
+
+---
+
+## Email Verification & Password Reset
+
+### Verification Code System
+
+**Code Generation**:
+
+```typescript
+async sendVerificationEmail(user: User) {
+  // Generate 6-digit code
+  const code = Math.floor(100000 + Math.random() * 900000).toString();
+  
+  // Save to user
+  user.verificationCode = code;
+  await this.userRepository.save(user);
+
+  // Send email
+  await this.mailService.sendVerificationEmail(user.email, code);
+}
+```
+
+**Verification**:
+
+```typescript
+async verifyEmail(dto: VerifyEmailDto) {
+  const user = await this.userService.findByEmail(dto.email);
+
+  if (user.verificationCode !== dto.code) {
+    throw new BadRequestException('Invalid verification code');
+  }
+
+  user.isVerified = true;
+  user.verificationCode = null;
+  await this.userRepository.save(user);
+}
+```
+
+### Password Reset Token System
+
+**Token Generation**:
+
+```typescript
+async requestPasswordReset(dto: RequestPasswordResetDto) {
+  const user = await this.userService.findByEmail(dto.email);
+
+  // Generate random token
+  const token = randomBytes(32).toString('hex');
+  
+  // Hash token before saving
+  const hashedToken = createHash('sha256').update(token).digest('hex');
+
+  user.resetPasswordToken = hashedToken;
+  user.resetPasswordExpires = new Date(Date.now() + PASSWORD_RESET_EXPIRES);
+  await this.userRepository.save(user);
+
+  // Send email with unhashed token
+  await this.mailService.sendPasswordResetEmail(user.email, token);
+}
+```
+
+**Reset Verification**:
+
+```typescript
+async resetPassword(dto: ResetPasswordDto) {
+  // Hash provided token
+  const hashedToken = createHash('sha256').update(dto.token).digest('hex');
+
+  const user = await this.userRepository.findOne({
+    where: {
+      resetPasswordToken: hashedToken,
+      resetPasswordExpires: MoreThan(new Date()),
+    },
+  });
+
+  if (!user) {
+    throw new BadRequestException('Invalid or expired reset token');
+  }
+
+  user.password = dto.newPassword;
+  user.resetPasswordToken = null;
+  user.resetPasswordExpires = null;
+  await this.userRepository.save(user);
+}
+```
+
+**Token Expiration**:
+- Default: 1 hour (3600000ms)
+- Configurable via `PASSWORD_RESET_EXPIRES` environment variable
+
+---
+
+## File Upload Security
+
+### Upload Constraints
+
+**File Type Validation**:
+
+```typescript
+@Post('upload')
+@UseGuards(AuthGuard('jwt'))
+@UseInterceptors(FileInterceptor('file'))
+async uploadFile(
+  @UploadedFile() file: Express.Multer.File,
+  @CurrentUser() user: User,
+) {
+  // JWT guard ensures authentication
+  // File validation handled by multer
+  return this.uploadService.upload(file);
+}
+```
+
+**Multer Configuration**:
+
+```typescript
+const storage = multer.memoryStorage();
+
+const fileFilter = (req, file, cb) => {
+  // Allow only images
+  if (!file.mimetype.match(/^image\/(jpeg|png|jpg|gif)$/)) {
+    cb(new Error('Only image files are allowed'), false);
+  }
+  cb(null, true);
+};
+
+const limits = {
+  fileSize: 5 * 1024 * 1024, // 5MB max
+};
+```
+
+**Security Measures**:
+1. JWT authentication required
+2. Image-only upload (jpeg, png, jpg, gif)
+3. 5MB file size limit
+4. Files stored in Cloudinary (not local server)
+5. Folder isolation: `my-app-uploads`
+
+---
+
+## Database-Level Security
+
+### SQL Injection Prevention
+
+**TypeORM Parameterization**:
+
+All queries use parameterized statements, preventing SQL injection:
+
+```typescript
+// Safe - parameterized query
+const user = await this.userRepository.findOne({
+  where: { email: dto.email },
+});
+
+// Safe - raw SQL with parameters
+const result = await this.pharmacyRepository.query(
+  `SELECT * FROM pharmacies WHERE ST_DWithin(location::geography, $1::geography, $2)`,
+  [userLocation, radius],
+);
+```
+
+### Relationship Access Control
+
+**Cascade Deletes**:
+
+```typescript
+@OneToMany(() => OrderItem, (item) => item.order, { cascade: true, onDelete: 'CASCADE' })
+items: OrderItem[];
+```
+
+Ensures referential integrity - deleting an order automatically deletes its items.
+
+**Eager Loading**:
+
+```typescript
+@ManyToOne(() => User, { eager: true })
+user: User;
+```
+
+Critical relations loaded automatically to prevent unauthorized data access patterns.
+
+---
+
+## Security Best Practices Summary
+
+### Authentication
+- ✅ JWT tokens with configurable expiration
+- ✅ Strong secret key (no weak fallback)
+- ✅ Email verification required before login
+- ✅ Password reset tokens hashed in database
+- ✅ Secure password hashing (bcrypt, cost 12)
+
+### Authorization
+- ✅ Role-based access control (3 roles)
+- ✅ Resource ownership verification
+- ✅ State machine for order transitions
+- ✅ Endpoint-level guards
+- ✅ Service-level access checks
+
+### Input Validation
+- ✅ Global ValidationPipe with whitelist
+- ✅ DTO-based validation with decorators
+- ✅ Type transformation and validation
+- ✅ Rate limiting on sensitive endpoints
+
+### Data Protection
+- ✅ Sensitive data redaction in logs
+- ✅ Password excluded from serialization
+- ✅ CORS enabled with credentials
+- ✅ Helmet security headers
+- ✅ Parameterized queries (no SQL injection)
+
+### Operational Security
+- ✅ Admin creation disabled in production
+- ✅ Correlation IDs for request tracing
+- ✅ Comprehensive error logging
+- ✅ File upload restrictions (type, size)
+- ✅ Background job timeout enforcement
+
+---
+
+## Common Security Patterns
+
+### Pattern 1: Ownership Check
+
+```typescript
+// Always verify ownership before allowing access
+async update(userId: string, dto: UpdateDto, currentUser: User) {
+  if (userId !== currentUser.id && currentUser.type !== UserRole.ADMIN) {
+    throw new ForbiddenException('Access denied');
+  }
+  // Proceed with update
+}
+```
+
+### Pattern 2: Role-Based Filtering
+
+```typescript
+// Filter data based on user role
+async findAll(user: User) {
+  if (user.type === UserRole.PHARMACIST) {
+    // Pharmacists see only their own + admin-created items
+    return this.repository.find({
+      where: [
+        { createdBy: user, isAdminCreated: false },
+        { isAdminCreated: true },
+      ],
+    });
+  }
+  // Others see all active items
+  return this.repository.find({ where: { isActive: true } });
+}
+```
+
+### Pattern 3: Conditional Validation
+
+```typescript
+// Validate based on context
+if (order.status === OrderStatus.DELIVERED) {
+  throw new BadRequestException('Order already delivered');
+}
+
+if (order.user.id !== user.id) {
+  throw new ForbiddenException('Not your order');
+}
+```
+
+### Pattern 4: Pessimistic Locking
+
+```typescript
+// Prevent race conditions on critical updates
+const item = await this.repository.findOne({
+  where: { id: itemId },
+  lock: { mode: 'pessimistic_write' },
+});
+
+// Modify and save within transaction
+item.quantity -= requestedQuantity;
+await this.repository.save(item);
+```
+
+---
+
+## Testing Authorization
+
+### Test Authentication Flow
+
+```typescript
+// Register
+const registerResponse = await request(app)
+  .post('/users/register')
+  .send({ email: 'test@example.com', password: 'Password123' });
+
+// Verify email (mock)
+await userService.verifyEmailCode('test@example.com', '123456');
+
+// Login
+const loginResponse = await request(app)
+  .post('/auth/login')
+  .send({ email: 'test@example.com', password: 'Password123' });
+
+const token = loginResponse.body.data.access_token;
+
+// Use token
+const profileResponse = await request(app)
+  .get('/users/me')
+  .set('Authorization', `Bearer ${token}`);
+```
+
+### Test Role-Based Access
+
+```typescript
+// Admin-only endpoint
+await request(app)
+  .post('/categories')
+  .set('Authorization', `Bearer ${userToken}`)
+  .send({ name: 'Test' })
+  .expect(403); // Forbidden for non-admin
+
+await request(app)
+  .post('/categories')
+  .set('Authorization', `Bearer ${adminToken}`)
+  .send({ name: 'Test' })
+  .expect(201); // Success for admin
+```
+
+### Test Ownership Check
+
+```typescript
+// User A tries to access User B's order
+await request(app)
+  .get(`/orders/${userBOrderId}`)
+  .set('Authorization', `Bearer ${userAToken}`)
+  .expect(403); // Forbidden
+
+// User B accesses own order
+await request(app)
+  .get(`/orders/${userBOrderId}`)
+  .set('Authorization', `Bearer ${userBToken}`)
+  .expect(200); // Success
+```

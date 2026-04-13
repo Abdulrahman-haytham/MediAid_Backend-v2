@@ -1,0 +1,604 @@
+# Quick Reference & Index
+
+## Documentation Index
+
+This documentation set provides comprehensive coverage of the MediAid Backend system:
+
+| Document | Description | Link |
+|----------|-------------|------|
+| **System Architecture** | Complete system overview, tech stack, architecture patterns, deployment | [Read](./01-system-architecture.md) |
+| **Database Schema** | All 18 entities, relationships, indexes, migrations, PostGIS usage | [Read](./02-database-schema.md) |
+| **API Reference** | Complete endpoint documentation with examples | [Read](./03-api-reference.md) |
+| **Permissions & Authorization** | Authentication, RBAC, ownership checks, security | [Read](./04-permissions-authorization.md) |
+| **Workflow Flows** | Business logic flows, state machines, processes | [Read](./05-workflow-flows.md) |
+
+---
+
+## Quick Navigation by Topic
+
+### For New Developers
+1. Start with [System Architecture](./01-system-architecture.md) - Understand the big picture
+2. Read [API Reference](./03-api-reference.md) - See what the system does
+3. Setup local environment using `.env.example`
+4. Run `pnpm install && pnpm start:dev`
+
+### For Frontend Developers
+1. [API Reference](./03-api-reference.md) - All endpoints with request/response examples
+2. [Permissions & Authorization](./04-permissions-authorization.md) - Authentication flow and role requirements
+3. [Quick API Summary](#api-endpoint-summary) - Endpoint table below
+
+### For Database Administrators
+1. [Database Schema](./02-database-schema.md) - Complete entity definitions and relationships
+2. PostGIS usage and spatial indexes
+3. Migration history and execution
+
+### For DevOps Engineers
+1. [System Architecture](./01-system-architecture.md) - Deployment architecture
+2. Docker setup (`docker-compose.yml`, `Dockerfile`)
+3. Environment configuration and monitoring
+
+### For Security Auditors
+1. [Permissions & Authorization](./04-permissions-authorization.md) - Complete security model
+2. Password hashing, JWT, rate limiting
+3. Input validation and injection prevention
+
+### For Business Analysts
+1. [Workflow Flows](./05-workflow-flows.md) - Business processes
+2. Order lifecycle and emergency matching algorithm
+3. User roles and permissions
+
+---
+
+## API Endpoint Summary
+
+### Authentication (4 endpoints)
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/auth/login` | No | Login, get JWT token |
+| POST | `/auth/verify-email` | No | Verify email with code |
+| POST | `/auth/request-password-reset` | No | Request password reset |
+| POST | `/auth/reset-password` | No | Reset password with token |
+
+### Users (7 endpoints)
+| Method | Path | Auth | Role | Description |
+|--------|------|------|------|-------------|
+| POST | `/users/register` | No | - | Register new user |
+| POST | `/users/admin` | No | - | Create admin (dev only) |
+| GET | `/users/me` | JWT | - | Get current user |
+| GET | `/users` | JWT | Admin | Get all users |
+| GET | `/users/:id` | JWT | Admin | Get user by ID |
+| PATCH | `/users/:id` | JWT | Owner/Admin | Update user |
+| DELETE | `/users/:id` | JWT | Owner/Admin | Delete user |
+
+### Categories (8 endpoints)
+| Method | Path | Auth | Role | Description |
+|--------|------|------|------|-------------|
+| POST | `/categories` | JWT | Admin | Create category |
+| PUT | `/categories/:id` | JWT | Admin | Update category |
+| GET | `/categories` | No | - | Get all categories |
+| GET | `/categories/:id` | No | - | Get category |
+| GET | `/categories/search/:name` | No | - | Search categories |
+| DELETE | `/categories/:id` | JWT | Admin | Delete category |
+| DELETE | `/categories/name/:name` | JWT | Admin | Delete by name |
+| GET | `/categories/:categoryId/products` | No | - | Get products in category |
+
+### Products (12 endpoints)
+| Method | Path | Auth | Role | Description |
+|--------|------|------|------|-------------|
+| POST | `/products` | JWT | Admin | Create product |
+| GET | `/products` | No | - | Get all products |
+| GET | `/products/suggestions` | No | - | Search suggestions |
+| GET | `/products/favorites` | JWT | - | Get favorites |
+| POST | `/products/favorites/:id/toggle` | JWT | - | Toggle favorite |
+| GET | `/products/search/:name` | No | - | Search products |
+| GET | `/products/category/:id/search` | No | - | Search in category |
+| GET | `/products/search-nearby` | No | - | Spatial search (PostGIS) |
+| GET | `/products/:id` | No | - | Get product |
+| PUT | `/products/:id` | JWT | Admin | Update product |
+| DELETE | `/products/:id` | JWT | Admin | Delete product |
+
+### Pharmacies (19 endpoints)
+| Method | Path | Auth | Role | Description |
+|--------|------|------|------|-------------|
+| POST | `/pharmacies` | JWT | Pharmacist | Create pharmacy |
+| PUT | `/pharmacies/me` | JWT | Pharmacist | Update my pharmacy |
+| GET | `/pharmacies` | No | - | Get all pharmacies |
+| GET | `/pharmacies/me` | JWT | Pharmacist | Get my pharmacy |
+| GET | `/pharmacies/me/orders` | JWT | Pharmacist | Get pharmacy orders |
+| POST | `/pharmacies/:id/rate` | JWT | - | Rate pharmacy |
+| GET | `/pharmacies/me/exists` | JWT | - | Check has pharmacy |
+| GET | `/pharmacies/:id/medicines` | No | - | Get medicine stock |
+| GET | `/pharmacies/:id/medicines/search` | No | - | Search medicine |
+| POST | `/pharmacies/me/products` | JWT | Pharmacist | Add product to stock |
+| POST | `/pharmacies/me/products/new` | JWT | Pharmacist | Create + add product |
+| GET | `/pharmacies/nearby` | No | - | Nearby pharmacies (PostGIS) |
+| GET | `/pharmacies/from-cart` | JWT | - | Get cart pharmacies |
+| GET | `/pharmacies/search` | No | - | Search by name |
+| GET | `/pharmacies/me/expiring-medicines` | JWT | Pharmacist | Expiring stock |
+| GET | `/pharmacies/me/low-stock` | JWT | Pharmacist | Low stock alert |
+| GET | `/pharmacies/:id` | No | - | Get pharmacy details |
+
+### Cart (5 endpoints)
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/cart/items` | JWT | Add item to cart |
+| GET | `/cart` | JWT | Get cart |
+| PUT | `/cart/items/:productId` | JWT | Update item quantity |
+| DELETE | `/cart/items/:productId` | JWT | Remove item |
+| DELETE | `/cart` | JWT | Clear cart |
+
+### Orders (6 endpoints)
+| Method | Path | Auth | Role | Description |
+|--------|------|------|------|-------------|
+| POST | `/orders` | JWT | - | Create order from cart |
+| PUT | `/orders/:id/status` | JWT | - | Update order status |
+| GET | `/orders/pharmacy` | JWT | Pharmacist | Get pharmacy orders |
+| GET | `/orders/me` | JWT | - | Get my orders |
+| GET | `/orders/:id` | JWT | - | Get order details |
+| POST | `/orders/:id/rate` | JWT | - | Rate order |
+
+### Emergency Orders (8 endpoints)
+| Method | Path | Auth | Role | Description |
+|--------|------|------|------|-------------|
+| POST | `/emergency-orders/create-smart` | JWT | - | Create with smart matching |
+| POST | `/emergency-orders` | JWT | - | Create emergency order |
+| GET | `/emergency-orders` | JWT | - | Get my emergency orders |
+| GET | `/emergency-orders/pharmacy/requests` | JWT | Pharmacist | Get requests |
+| GET | `/emergency-orders/:id` | JWT | - | Get details |
+| PUT | `/emergency-orders/:id/respond` | JWT | Pharmacist | Respond to request |
+| PUT | `/emergency-orders/:id/cancel` | JWT | - | Cancel order |
+| PUT | `/emergency-orders/:id/fulfill` | JWT | - | Fulfill order |
+
+### Chat (2 REST + WebSocket)
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/chat` | JWT | Send message |
+| GET | `/chat/:orderId` | JWT | Get messages |
+| WS | `/chat` namespace | JWT | Real-time messaging |
+
+### Used Medicines (4 endpoints)
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/used-medicines` | JWT | Add used medicine |
+| GET | `/used-medicines` | JWT | Get my medicines |
+| PUT | `/used-medicines/:id` | JWT | Update medicine |
+| DELETE | `/used-medicines/:id` | JWT | Delete medicine |
+
+### KafuPosts (6 endpoints)
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/kafu-posts` | JWT | Create post |
+| GET | `/kafu-posts` | No | Get open posts |
+| GET | `/kafu-posts/area` | No | Filter by area |
+| PUT | `/kafu-posts/:id/accept` | JWT | Accept post |
+| PUT | `/kafu-posts/:id/complete` | JWT | Complete post |
+| DELETE | `/kafu-posts/:id` | JWT | Delete post |
+
+### Upload (1 endpoint)
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/upload` | JWT | Upload image (5MB max) |
+
+**Total: 81 endpoints** (79 REST + 2 WebSocket events)
+
+---
+
+## Database Tables Summary
+
+| Table | Records | Description |
+|-------|---------|-------------|
+| `users` | User accounts | Authentication and profile data |
+| `categories` | Product categories | Hierarchical product organization |
+| `products` | Product catalog | Medicines and medical supplies |
+| `pharmacies` | Pharmacy locations | With spatial data (PostGIS) |
+| `pharmacy_medicines` | Stock inventory | Product availability per pharmacy |
+| `pharmacy_reviews` | Pharmacy ratings | User reviews and ratings |
+| `carts` | Shopping carts | One per user |
+| `cart_items` | Cart contents | Items with pharmacy reference |
+| `orders` | Customer orders | Order lifecycle tracking |
+| `order_items` | Order line items | Products ordered |
+| `emergency_orders` | Emergency requests | Urgent medicine needs |
+| `emergency_order_responses` | Pharmacy responses | Accept/reject emergency requests |
+| `chats` | Order chats | One per order |
+| `chat_messages` | Chat messages | Order-linked communication |
+| `used_medicine` | Medicine trackers | User medication tracking |
+| `used_medicine_item` | Medicine entries | Individual medicines being tracked |
+| `used_medicine_history` | Change history | Audit trail for updates |
+| `kafu_posts` | Community help | Medicine payment/delivery assistance |
+
+**Total: 18 tables**
+
+---
+
+## User Roles & Permissions Matrix
+
+| Permission | Admin | User | Pharmacist |
+|------------|-------|------|------------|
+| Browse products | ✅ | ✅ | ✅ |
+| Create orders | ✅ | ✅ | ✅ |
+| Manage cart | ✅ | ✅ | ✅ |
+| Create categories | ✅ | ❌ | ❌ |
+| Create products | ✅ | ❌ | ❌ |
+| Update any product | ✅ | ❌ | ❌ (own only) |
+| Delete products | ✅ | ❌ | ❌ |
+| Create pharmacy | ✅ | ❌ | ✅ |
+| Manage own pharmacy | ✅ | ❌ | ✅ |
+| Add pharmacy stock | ✅ | ❌ | ✅ |
+| View pharmacy orders | ✅ | ❌ | ✅ (own) |
+| Update order status | ✅ (broad) | ✅ (cancel only) | ✅ (pharmacy orders) |
+| Respond to emergencies | ✅ | ❌ | ✅ |
+| View all users | ✅ | ❌ | ❌ |
+| Delete users | ✅ | ❌ | ❌ |
+| Delete KafuPosts | ✅ | ✅ (own) | ✅ (own) |
+
+---
+
+## Environment Variables Quick Reference
+
+### Required Variables
+```bash
+# Database (or use DATABASE_URL)
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=postgres
+DB_PASS=your_password
+DB_NAME=nest_db
+
+# Authentication
+JWT_SECRET=your_secret_key
+
+# Email
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your_email@gmail.com
+SMTP_PASS=your_app_password
+
+# Cloudinary
+CLOUDINARY_CLOUD_NAME=your_cloud_name
+CLOUDINARY_API_KEY=your_api_key
+CLOUDINARY_API_SECRET=your_api_secret
+```
+
+### Optional Variables
+```bash
+DATABASE_URL=postgresql://user:pass@host:port/db
+DB_SYNCHRONIZE=false
+DB_SSL=false
+JWT_EXPIRES_IN=10d
+SECRET_KEY_ADMIN=your_secret
+NODE_ENV=development
+PORT=3000
+PASSWORD_RESET_EXPIRES=3600000
+```
+
+---
+
+## Order Status Transitions
+
+### Valid Transitions by Role
+
+| Current Status | User Can | Pharmacist Can | Admin Can |
+|----------------|----------|----------------|-----------|
+| `pending` | Cancel | Accept, Reject, Cancel | Accept, Reject, Prepare, In Delivery, Delivered, Cancel |
+| `accepted` | - | Prepare, In Delivery, Cancel | Prepare, In Delivery, Delivered, Cancel |
+| `rejected` | - | - | - |
+| `preparing` | - | In Delivery, Cancel | In Delivery, Delivered, Cancel |
+| `in_delivery` | - | Delivered, Cancel | Delivered, Cancel |
+| `delivered` | - | - | - |
+| `canceled` | - | - | - |
+
+---
+
+## Emergency Order Scoring
+
+### Algorithm (Max 100 points)
+
+```
+Total Score = Distance (0-50) + Rating (0-30) + Availability (0-20)
+```
+
+**Distance Score** (0-50 points):
+```
+score = GREATEST(0, 50 - (distance / 50000) * 50)
+```
+- 0m distance → 50 points
+- 50km distance → 0 points
+- >50km → Not included
+
+**Rating Score** (0-30 points):
+```
+score = (averageRating / 5) * 30
+```
+- 5.0 rating → 30 points
+- 2.5 rating → 15 points
+- 0.0 rating → 0 points
+
+**Availability Score** (0-20 points):
+```
+score = quantity > 0 ? 20 : 0
+```
+- In stock → 20 points
+- Out of stock → 0 points
+
+**Example**:
+```
+Pharmacy A:
+- Distance: 5km → 45 points
+- Rating: 4.5 → 27 points
+- In stock → 20 points
+- Total: 92 points
+
+Pharmacy B:
+- Distance: 25km → 25 points
+- Rating: 3.0 → 18 points
+- In stock → 20 points
+- Total: 63 points
+```
+
+---
+
+## Key Constants
+
+```typescript
+// Order Constants
+MAX_SEARCH_DISTANCE_METERS = 50000     // 50km for emergency matching
+DEFAULT_RESPONSE_TIMEOUT_MINUTES = 15  // Emergency order timeout
+SCORING_WEIGHTS = {
+  distance: 50,
+  rating: 30,
+  availability: 20,
+}
+
+// Security
+BCRYPT_COST = 12
+JWT_ALGORITHM = 'HS256'
+PASSWORD_RESET_EXPIRES = 3600000  // 1 hour
+
+// File Upload
+MAX_FILE_SIZE = 5 * 1024 * 1024  // 5MB
+ALLOWED_FILE_TYPES = ['jpeg', 'png', 'jpg', 'gif']
+
+// Rate Limiting
+GLOBAL_RATE_LIMIT = 10  // requests per minute
+AUTH_RATE_LIMIT = 5     // requests per minute
+ADMIN_RATE_LIMIT = 3    // requests per minute
+
+// Chat
+MAX_MESSAGE_LENGTH = 2000  // characters
+```
+
+---
+
+## Common Workflows
+
+### User Journey: Browse & Order
+
+```
+1. Register → Verify Email → Login
+2. Browse Categories → View Products
+3. Search Nearby Pharmacies (PostGIS)
+4. Add Items to Cart (with stock validation)
+5. Create Order (transactional, deducts stock)
+6. Track Order Status
+7. Rate Order (when delivered)
+```
+
+### Pharmacist Journey: Manage Pharmacy
+
+```
+1. Register as Pharmacist → Verify → Login
+2. Create Pharmacy (with location)
+3. Add Products to Stock
+4. Receive Orders
+5. Update Order Status (pending → accepted → preparing → in_delivery → delivered)
+6. Respond to Emergency Orders
+7. Monitor Stock (expiring, low stock alerts)
+```
+
+### Emergency Order Journey
+
+```
+1. User Creates Emergency Order (with location)
+2. System Scores Pharmacies (distance + rating + availability)
+3. Top 5 Pharmacies Targeted
+4. Pharmacies Respond (accept/reject)
+5. Background Job Marks No Response if timeout
+6. User Notified of Responses
+```
+
+---
+
+## Development Commands
+
+```bash
+# Install dependencies
+pnpm install
+
+# Start development server
+pnpm run start:dev
+
+# Start with debug
+pnpm run start:debug
+
+# Build for production
+pnpm run build
+
+# Run production build
+pnpm run start:prod
+
+# Run tests
+pnpm run test
+
+# Run tests with coverage
+pnpm run test:cov
+
+# Run E2E tests
+pnpm run test:e2e
+
+# Lint code
+pnpm run lint
+
+# Format code
+pnpm run format
+
+# Demo: Create test user
+pnpm run demo:user
+
+# List all files
+pnpm run files:list
+```
+
+---
+
+## Docker Commands
+
+```bash
+# Start all services
+docker-compose up -d
+
+# View logs
+docker-compose logs -f app
+
+# Stop services
+docker-compose down
+
+# Rebuild and start
+docker-compose up -d --build
+
+# Database backup
+docker-compose exec postgres pg_dump -U postgres nest_db > backup.sql
+
+# Database restore
+docker-compose exec -T postgres psql -U postgres nest_db < backup.sql
+```
+
+---
+
+## Troubleshooting
+
+### Common Issues
+
+**Issue**: Cannot login
+- **Check**: Is email verified? (`isVerified: true`)
+- **Check**: JWT_SECRET matches
+- **Check**: Password correct (case-sensitive)
+
+**Issue**: Order creation fails
+- **Check**: Pharmacy exists and active
+- **Check**: Stock sufficient
+- **Check**: Delivery address provided (if delivery order)
+- **Check**: Database connection stable
+
+**Issue**: PostGIS queries fail
+- **Check**: PostGIS extension enabled
+- **Check**: Location columns created
+- **Check**: Valid coordinates provided
+
+**Issue**: Email not sending
+- **Check**: SMTP credentials correct
+- **Check**: App password (not account password) for Gmail
+- **Check**: Port and TLS settings
+- **Note**: Registration continues even if email fails (logged)
+
+**Issue**: File upload fails
+- **Check**: File size <= 5MB
+- **Check**: File type is jpeg/png/jpg/gif
+- **Check**: Cloudinary credentials correct
+
+**Issue**: Emergency orders not matching
+- **Check**: User location provided (lat/lng)
+- **Check**: Pharmacies have location data
+- **Check**: PostGIS spatial indexes exist
+- **Check**: Pharmacies within 50km radius
+
+---
+
+## Support & Resources
+
+### Internal Resources
+- **Swagger UI**: `http://localhost:3000/api`
+- **Health Check**: `GET http://localhost:3000/`
+- **Logs**: Console output with correlation IDs
+
+### External Resources
+- **NestJS Docs**: https://docs.nestjs.com/
+- **TypeORM Docs**: https://typeorm.io/
+- **PostGIS Docs**: https://postgis.net/documentation/
+- **PostgreSQL Docs**: https://www.postgresql.org/docs/
+
+### Project Files
+- **README**: Project overview and setup
+- **DOCKER_README**: Docker-specific guide
+- **PROJECT_STRUCTURE**: Arabic directory structure
+- **GITHUB_READY_CHECKLIST**: Pre-deployment checklist
+
+---
+
+## Glossary
+
+| Term | Definition |
+|------|------------|
+| **JWT** | JSON Web Token - stateless authentication |
+| **RBAC** | Role-Based Access Control |
+| **PostGIS** | PostgreSQL extension for spatial data |
+| **GIST** | Generalized Search Tree - index type for spatial data |
+| **DTO** | Data Transfer Object - request/response schemas |
+| **Entity** | Database model class in TypeORM |
+| **Guard** | NestJS authorization middleware |
+| **Interceptor** | NestJS request/response transformer |
+| **Pipe** | NestJS data validator/transformer |
+| **Pessimistic Lock** | Database lock preventing concurrent reads |
+| **Slug** | URL-friendly identifier (auto-generated from name) |
+| **SRID** | Spatial Reference System ID (4326 = WGS84) |
+| **Transaction** | Atomic database operation sequence |
+
+---
+
+## Change Log
+
+| Date | Version | Changes |
+|------|---------|---------|
+| 2026-04-12 | 1.0 | Initial documentation created |
+
+---
+
+## Maintenance Notes
+
+### Regular Tasks
+- [ ] Monitor error logs for exceptions
+- [ ] Review emergency order timeout effectiveness
+- [ ] Check spatial index performance
+- [ ] Update dependencies (npm audit)
+- [ ] Review and rotate secrets (JWT_SECRET, API keys)
+- [ ] Database backup verification
+- [ ] Clean up expired KafuPosts
+- [ ] Monitor rate limiting effectiveness
+
+### When Adding Features
+- [ ] Update this documentation
+- [ ] Add new endpoints to API reference
+- [ ] Update entity diagrams if schema changes
+- [ ] Add new workflows to workflow flows
+- [ ] Update permissions matrix if roles change
+- [ ] Create database migration if entities change
+- [ ] Add tests for new functionality
+
+### When Deploying
+- [ ] Run migrations
+- [ ] Update environment variables
+- [ ] Verify health check endpoint
+- [ ] Test critical flows (login, order creation)
+- [ ] Monitor logs for errors
+- [ ] Verify database backups
+
+---
+
+## Documentation Feedback
+
+If you find errors, inconsistencies, or have suggestions for improvement:
+1. Check if the information exists in another document
+2. Verify against the actual codebase
+3. Submit updates with clear explanations
+4. Keep examples current with code changes
+
+**Remember**: Documentation is only valuable when it's accurate and up-to-date!

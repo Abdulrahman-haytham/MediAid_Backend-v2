@@ -1,0 +1,228 @@
+================================================================================
+DEPRECATED & REMOVED COMPONENTS
+================================================================================
+Last Updated: 2026-04-13
+Status: REMOVED
+Reason: Dependencies removed (Redis, Firebase) to simplify infrastructure
+================================================================================
+
+OVERVIEW
+--------
+This document tracks all components, modules, and files that have been removed
+from the codebase due to dependency removal (Redis and Firebase).
+
+
+================================================================================
+REMOVED DEPENDENCIES (package.json)
+================================================================================
+
+1. firebase-admin (v13.8.0)
+   - Type: Production Dependency
+   - Reason: Firebase push notifications no longer required
+   - Impact: All Firebase-related functionality removed
+
+2. @nestjs/bull (v11.0.4)
+   - Type: Production Dependency
+   - Reason: Bull queue system uses Redis as backend
+   - Impact: All background job queue functionality removed
+
+3. bull (v4.16.5)
+   - Type: Production Dependency
+   - Reason: Redis-based job queue library
+   - Impact: Job queue system removed entirely
+
+4. @types/bull (v4.10.4)
+   - Type: Dev Dependency
+   - Reason: Type definitions for Bull (no longer needed)
+   - Impact: None (types only)
+
+
+================================================================================
+REMOVED FILES
+================================================================================
+
+QUEUE SYSTEM (src/common/queue/)
+---------------------------------
+All files in this directory have been deleted:
+
+1. queue.module.ts
+   - Purpose: NestJS module configuring Bull queue with Redis connection
+   - Functionality:
+     * Configured BullModule with Redis host/port from environment variables
+     * Registered two queues: 'order-timeout' and 'kafupost-cleanup'
+     * Set default job options (attempts, backoff, removeOnComplete/fail)
+     * Imported TypeOrmModule for KafuPost entity
+     * Imported EmergencyOrderModule for timeout processing
+   - Dependencies: @nestjs/bull, @nestjs/config, @nestjs/typeorm
+   - Redis Config: REDIS_HOST, REDIS_PORT (from .env)
+
+2. order-timeout.processor.ts
+   - Purpose: Bull processor for handling emergency order timeouts
+   - Functionality:
+     * Processed 'check-timeouts' jobs from 'order-timeout' queue
+     * Called EmergencyOrderService.processOrderTimeouts()
+     * Ran periodically via recurring job (every 60 seconds)
+   - Dependencies: @nestjs/bull, EmergencyOrderService
+   - Job Type: 'check-timeouts'
+
+3. kafupost-cleanup.processor.ts
+   - Purpose: Bull processor for deactivating expired KafuPosts
+   - Functionality:
+     * Processed 'deactivate-expired' jobs from 'kafupost-cleanup' queue
+     * Queried database for posts where expiresAt < current time
+     * Updated status from 'Open' to 'Cancelled' for expired posts
+     * Ran daily via recurring job (every 24 hours)
+   - Dependencies: @nestjs/bull, TypeORM, KafuPost entity
+   - Job Type: 'deactivate-expired'
+
+JOB SCHEDULERS (src/common/jobs/)
+----------------------------------
+All files in this directory have been deleted:
+
+4. order-timeout.job.ts
+   - Purpose: Recurring job scheduler for order timeout checks
+   - Functionality:
+     * Implemented OnModuleInit to schedule recurring timeout check
+     * Added repeatable job to 'order-timeout' queue
+     * Interval: Every 60 seconds (60000ms)
+     * Implemented OnModuleDestroy to cleanup job on shutdown
+   - Dependencies: @nestjs/bull, InjectQueue decorator
+   - Lifecycle: Registered in AppModule providers
+
+5. kafupost-cleanup.job.ts
+   - Purpose: Recurring job scheduler for KafuPost cleanup
+   - Functionality:
+     * Implemented OnModuleInit to schedule daily cleanup job
+     * Added repeatable job to 'kafupost-cleanup' queue
+     * Interval: Every 24 hours (86400000ms)
+     * Implemented OnModuleDestroy to cleanup job on shutdown
+   - Dependencies: @nestjs/bull, InjectQueue decorator
+   - Lifecycle: Registered in AppModule providers
+
+NOTIFICATION MODULE (src/modules/notification/)
+------------------------------------------------
+All files in this directory have been deleted:
+
+6. notification.service.ts
+   - Purpose: Firebase Admin SDK wrapper for push notifications
+   - Functionality:
+     * Initialized Firebase Admin SDK on module init
+     * Configured Firebase credentials from environment variables
+     * sendToDevice(): Send push notification to single device token
+     * sendToMultiple(): Send push notification to multiple device tokens
+     * Error handling for invalid tokens and Firebase failures
+   - Dependencies: firebase-admin, @nestjs/config
+   - Firebase Config: FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY
+
+7. notification.module.ts
+   - Purpose: NestJS module wrapper for NotificationService
+   - Functionality:
+     * Exported NotificationService for use across the application
+     * Global: No (needed explicit import in modules that use it)
+   - Dependencies: NotificationService
+
+
+================================================================================
+MODIFIED FILES
+================================================================================
+
+1. package.json
+   - Removed dependencies:
+     * firebase-admin
+     * @nestjs/bull
+     * bull
+   - Removed dev dependencies:
+     * @types/bull
+   - Impact: Reduced package count by 99 packages
+
+2. src/app.module.ts
+   - Removed imports:
+     * QueueModule (from './common/queue/queue.module')
+     * NotificationModule (from './modules/notification/notification.module')
+     * OrderTimeoutJob (from './common/jobs/order-timeout.job')
+     * KafuPostCleanupJob (from './common/jobs/kafupost-cleanup.job')
+   - Removed from imports array:
+     * QueueModule
+     * NotificationModule
+   - Removed from providers array:
+     * OrderTimeoutJob
+     * KafuPostCleanupJob
+   - Impact: Simplified app module, no queue or Firebase initialization
+
+
+================================================================================
+FUNCTIONALITY LOST
+================================================================================
+
+The following features are NO LONGER AVAILABLE:
+
+1. Background Job Processing
+   - Emergency order timeout detection (automatic)
+   - KafuPost expiration cleanup (automatic)
+   - Any custom job queue processing
+
+2. Push Notifications
+   - Firebase Cloud Messaging (FCM) integration
+   - Device token-based notifications
+   - Multicast notifications
+
+3. Queue-Based Features
+   - Recurring scheduled tasks via Bull
+   - Job retry logic with backoff
+   - Job completion/failure tracking
+
+
+================================================================================
+ALTERNATIVES / MIGRATION PATH
+================================================================================
+
+If queue-based background processing is needed in the future, consider:
+
+Option 1: @nestjs/bullmq + bullmq (Redis alternative: not applicable)
+  - Still requires Redis, but with modern BullMQ API
+  - Migration: Reimplement processors with BullMQ syntax
+
+Option 2: Cron Jobs (node-cron)
+  - No external dependencies
+  - Simpler API for scheduled tasks
+  - Example: Use @nestjs/schedule module with cron expressions
+  - Trade-off: No distributed queue, runs on single instance
+
+Option 3: Database-Based Scheduler
+  - Store scheduled tasks in database
+  - Use setInterval or cron to poll and execute
+  - More control, no Redis dependency
+  - Trade-off: Slightly more complex implementation
+
+For Push Notifications replacement:
+  - Consider OneSignal, Expo Notifications, or custom WebSocket solution
+  - Evaluate based on target platform (web, mobile, desktop)
+
+
+================================================================================
+ENVIRONMENT VARIABLES NO LONGER NEEDED
+================================================================================
+
+These .env variables are now obsolete and can be removed:
+
+- REDIS_HOST          (Redis server hostname)
+- REDIS_PORT          (Redis server port, default: 6379)
+- FIREBASE_PROJECT_ID (Firebase project identifier)
+- FIREBASE_CLIENT_EMAIL (Firebase service account email)
+- FIREBASE_PRIVATE_KEY  (Firebase service account private key)
+
+
+================================================================================
+NOTES
+================================================================================
+
+- Build verification: Project builds successfully after removal (npm run build)
+- No compilation errors detected
+- All references to removed modules have been cleaned up
+- Consider updating .env.example to remove obsolete variables
+- Consider updating PROJECT_REPORT.md or README.md to reflect changes
+
+
+================================================================================
+END OF DOCUMENT
+================================================================================

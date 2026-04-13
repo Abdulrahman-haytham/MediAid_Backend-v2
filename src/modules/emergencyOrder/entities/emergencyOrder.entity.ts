@@ -13,6 +13,12 @@ import {
 import { User } from '../../user/user.entity';
 import { Pharmacy } from '../../pharmacy/pharmacy.entity';
 
+// Custom type for PostGIS geometry columns in TypeORM
+type PointGeometry = {
+  type: 'Point';
+  coordinates: [number, number]; // [longitude, latitude]
+};
+
 export enum EmergencyOrderStatus {
   PENDING = 'pending',
   ACCEPTED = 'accepted',
@@ -27,6 +33,7 @@ export enum EmergencyOrderPriority {
 }
 
 @Entity('emergency_orders')
+@Index('idx_emergency_orders_location_gist', ['location'], { spatial: true })
 export class EmergencyOrder {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -40,10 +47,16 @@ export class EmergencyOrder {
   @Column({ type: 'text', nullable: true })
   additionalNotes: string;
 
-  // Storing location as GeoJSON or simple lat/lng.
-  // Given Pharmacy uses lat/lng columns, let's stick to consistency or use JSON if we want full Point structure.
-  // Legacy used { type: 'Point', coordinates: [lng, lat] }.
-  // Let's use simple lat/lng for easier querying with Pharmacy entity which uses lat/lng.
+  // PostGIS geometry column for spatial queries
+  // Uses SRID 4326 (WGS84) with Point feature type
+  // Stored as GeoJSON: { type: 'Point', coordinates: [longitude, latitude] }
+  @Column('geometry', {
+    spatialFeatureType: 'Point',
+    srid: 4326,
+    nullable: true,
+  })
+  location: PointGeometry;
+
   @Column({ type: 'float' })
   latitude: number;
 
@@ -88,6 +101,33 @@ export class EmergencyOrder {
 
   @UpdateDateColumn()
   updatedAt: Date;
+
+  /**
+   * Extract longitude from PostGIS geometry column.
+   * GeoJSON Point coordinates are [longitude, latitude].
+   */
+  getLon(): number | null {
+    return this.location?.coordinates?.[0] ?? null;
+  }
+
+  /**
+   * Extract latitude from PostGIS geometry column.
+   * GeoJSON Point coordinates are [longitude, latitude].
+   */
+  getLat(): number | null {
+    return this.location?.coordinates?.[1] ?? null;
+  }
+
+  /**
+   * Set the PostGIS geometry column from longitude and latitude.
+   * IMPORTANT: GeoJSON Point coordinates order is [longitude, latitude].
+   */
+  setLocation(lon: number, lat: number): void {
+    this.location = {
+      type: 'Point',
+      coordinates: [lon, lat],
+    };
+  }
 }
 
 export enum PharmacyResponseStatus {

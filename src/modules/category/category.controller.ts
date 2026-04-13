@@ -6,7 +6,6 @@ import {
   Param,
   Post,
   Put,
-  Req,
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
@@ -28,7 +27,7 @@ export class CategoryController {
   @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: 'Create a new category (Admin only)' })
   @Post()
-  async create(@Body() dto: CreateCategoryDto, @Req() req: any) {
+  async create(@Body() dto: CreateCategoryDto) {
     const category = await this.categoryService.create(dto);
     return { message: 'Category created successfully', category };
   }
@@ -38,11 +37,7 @@ export class CategoryController {
   @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: 'Update an existing category (Admin only)' })
   @Put(':id')
-  async update(
-    @Param('id') id: string,
-    @Body() dto: UpdateCategoryDto,
-    @Req() req: any,
-  ) {
+  async update(@Param('id') id: string, @Body() dto: UpdateCategoryDto) {
     const category = await this.categoryService.update(id, dto);
     return { message: 'Category updated successfully', category };
   }
@@ -76,7 +71,7 @@ export class CategoryController {
   @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: 'Delete category by ID (Admin only)' })
   @Delete(':id')
-  async remove(@Param('id') id: string, @Req() req: any) {
+  async remove(@Param('id') id: string) {
     await this.categoryService.remove(id);
     return { message: 'Category deleted successfully' };
   }
@@ -86,7 +81,7 @@ export class CategoryController {
   @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: 'Delete category by name (Admin only)' })
   @Delete('name/:name')
-  async removeByName(@Param('name') name: string, @Req() req: any) {
+  async removeByName(@Param('name') name: string) {
     await this.categoryService.removeByName(name);
     return { message: 'Category deleted successfully' };
   }

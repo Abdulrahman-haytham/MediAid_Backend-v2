@@ -80,11 +80,12 @@ export class CreateUserDto {
   @ApiProperty({
     type: LocationCoordinatesDto,
     description: 'User location coordinates',
+    required: false,
   })
+  @IsOptional()
   @ValidateNested()
   @Type(() => LocationCoordinatesDto)
-  @IsNotEmpty()
-  location: LocationCoordinatesDto;
+  location?: LocationCoordinatesDto;
 
   @ApiProperty({
     example: 'LIC-12345',

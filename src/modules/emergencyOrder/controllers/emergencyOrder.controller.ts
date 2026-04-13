@@ -8,7 +8,12 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiBearerAuth,
+  ApiResponse,
+} from '@nestjs/swagger';
 import { EmergencyOrderService } from '../services/emergencyOrder.service';
 import { CreateEmergencyOrderDto } from '../dto/create-emergencyOrder.dto';
 import { RespondToEmergencyOrderDto } from '../dto/respond-emergencyOrder.dto';
@@ -24,17 +29,45 @@ export class EmergencyOrderController {
 
   @ApiBearerAuth()
   @UseGuards(AuthGuard('jwt'))
-  @ApiOperation({ summary: 'Create emergency order' })
+  @ApiOperation({
+    summary: 'Create smart emergency order with PostGIS spatial matching',
+    description:
+      'Finds the top 5 best-matching pharmacies based on a scoring equation: ' +
+      'distance (0-50) + rating (0-30) + drug availability (0-20). ' +
+      'Uses PostGIS ::geography for accurate meter-level distances.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Emergency order created with matched pharmacies',
+  })
+  @Post('create-smart')
+  async createSmart(
+    @CurrentUser() user: User,
+    @Body() dto: CreateEmergencyOrderDto,
+  ) {
+    const result = await this.emergencyOrderService.createSmartOrder(user, dto);
+    return {
+      message:
+        'Emergency order created and sent to the best-matching pharmacies.',
+      order: result.order,
+      matchedPharmacies: result.matchedPharmacies,
+    };
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard('jwt'))
+  @ApiOperation({ summary: 'Create emergency order (legacy endpoint)' })
   @Post()
   async create(
     @CurrentUser() user: User,
     @Body() dto: CreateEmergencyOrderDto,
   ) {
-    const order = await this.emergencyOrderService.createSmartOrder(user, dto);
+    const result = await this.emergencyOrderService.createSmartOrder(user, dto);
     return {
       message:
         'Emergency order created and sent to the best-matching pharmacies.',
-      order,
+      order: result.order,
+      matchedPharmacies: result.matchedPharmacies,
     };
   }
 

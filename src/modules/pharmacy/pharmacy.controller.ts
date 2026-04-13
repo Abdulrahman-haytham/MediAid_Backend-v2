@@ -28,6 +28,7 @@ import { UpdatePharmacyDto } from './dto/update-pharmacy.dto';
 import { RatePharmacyDto } from './dto/rate-pharmacy.dto';
 import { AddProductDto } from './dto/add-product.dto';
 import { CreateProductForPharmacyDto } from './dto/create-product-for-pharmacy.dto';
+import { NearbyPharmacyQueryDto } from './dto/nearby-pharmacy.dto';
 
 @ApiTags('Pharmacies')
 @Controller('pharmacies')
@@ -83,7 +84,6 @@ export class PharmacyController {
     return { message: 'Pharmacy updated successfully', pharmacy };
   }
 
-  // Legacy alias: PUT /api/pharmacies/updatePharmacy
   @ApiBearerAuth()
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(UserRole.PHARMACIST)
@@ -156,7 +156,6 @@ export class PharmacyController {
     return this.pharmacyService.checkUserPharmacy(req.user.id);
   }
 
-  // Legacy alias: GET /api/pharmacies/checkUserHasPharmacy
   @ApiBearerAuth()
   @UseGuards(AuthGuard('jwt'))
   @Get('checkUserHasPharmacy')
@@ -170,7 +169,6 @@ export class PharmacyController {
     return this.pharmacyService.getPharmacyMedicines(id);
   }
 
-  // Legacy alias: GET /api/pharmacies/getPharmacyMedicines/:id
   @Get('getPharmacyMedicines/:id')
   async getPharmacyMedicinesLegacy(@Param('id') id: string) {
     return this.getPharmacyMedicines(id);
@@ -212,19 +210,49 @@ export class PharmacyController {
     return this.addProduct(req, dto);
   }
 
-  @ApiOperation({ summary: 'Find nearby pharmacies' })
-  @ApiQuery({ name: 'maxDistance', required: false })
+  @ApiOperation({
+    summary: 'Find nearby pharmacies using PostGIS spatial search',
+    description:
+      'Returns pharmacies within the given radius, sorted by distance. ' +
+      'Coordinates must be in GeoJSON order: [longitude, latitude].',
+  })
+  @ApiQuery({
+    name: 'lon',
+    type: Number,
+    required: true,
+    description: 'Longitude coordinate (GeoJSON order)',
+    example: 31.2357,
+  })
+  @ApiQuery({
+    name: 'lat',
+    type: Number,
+    required: true,
+    description: 'Latitude coordinate (GeoJSON order)',
+    example: 30.0444,
+  })
+  @ApiQuery({
+    name: 'radius',
+    type: Number,
+    required: false,
+    description: 'Search radius in meters (default: 5000, max: 100000)',
+    example: 5000,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Nearby pharmacies found successfully',
+  })
   @Get('nearby')
-  async nearby(
-    @Query('longitude') longitude: string,
-    @Query('latitude') latitude: string,
-    @Query('maxDistance') maxDistance?: string,
-  ) {
-    return this.pharmacyService.findNearbyPharmacies(
-      parseFloat(longitude),
-      parseFloat(latitude),
-      parseInt(maxDistance || '5000', 10),
+  async nearby(@Query() query: NearbyPharmacyQueryDto) {
+    const results = await this.pharmacyService.findNearbyPharmacies(
+      query.lon,
+      query.lat,
+      query.radius ?? 5000,
     );
+    return {
+      message: `Found ${results.length} pharmacies within ${query.radius ?? 5000}m`,
+      count: results.length,
+      pharmacies: results,
+    };
   }
 
   @ApiBearerAuth()

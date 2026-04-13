@@ -91,4 +91,13 @@ export class CreateProductDto {
   @IsNumber()
   @Min(0)
   price: number;
+
+  @ApiProperty({
+    example: false,
+    description: 'Does this product require a prescription?',
+    required: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  requiresPrescription?: boolean;
 }

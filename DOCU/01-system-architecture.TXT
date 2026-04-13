@@ -1,0 +1,599 @@
+# System Architecture Overview
+
+## 1. System Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        Client Applications                   │
+│              (Web App, Mobile App, Admin Panel)              │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         │ HTTP/REST + WebSocket
+                         │
+┌────────────────────────▼────────────────────────────────────┐
+│                     MediAid Backend                          │
+│                   (NestJS 11 Application)                    │
+│                                                              │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │                Global Middleware                      │   │
+│  │  • Helmet (Security Headers)                         │   │
+│  │  • CORS (Cross-Origin Resource Sharing)             │   │
+│  │  • Compression (Gzip)                                │   │
+│  │  • Global ValidationPipe                             │   │
+│  │  • Throttler (Rate Limiting)                         │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                                                              │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │              Authentication Layer                    │   │
+│  │  • JWT Strategy (Passport)                           │   │
+│  │  • RolesGuard                                        │   │
+│  │  • AuthGuard('jwt')                                  │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                                                              │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │              Domain Modules (12)                     │   │
+│  │                                                      │   │
+│  │  Core Modules:                                       │   │
+│  │  ├─ Auth Module (Login, JWT, Password Reset)        │   │
+│  │  ├─ User Module (Registration, Profile, CRUD)       │   │
+│  │  ├─ Mail Module (SMTP Email Service)                │   │
+│  │  ├─ Upload Module (Cloudinary Integration)          │   │
+│  │  │                                                   │   │
+│  │  Catalog Modules:                                    │   │
+│  │  ├─ Category Module (Product Categories)            │   │
+│  │  ├─ Product Module (Medicine Catalog)               │   │
+│  │  ├─ Pharmacy Module (Pharmacy Management)           │   │
+│  │  │                                                   │   │
+│  │  Order Flow Modules:                                 │   │
+│  │  ├─ Cart Module (Shopping Cart)                     │   │
+│  │  ├─ Order Module (Regular Orders)                   │   │
+│  │  ├─ Emergency Order Module (Smart Matching)         │   │
+│  │  ├─ Chat Module (Real-time Messaging)               │   │
+│  │  │                                                   │   │
+│  │  Additional Features:                                │   │
+│  │  ├─ Used Medicine Module (Medication Tracking)      │   │
+│  │  └─ KafuPost Module (Community Help)                │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                                                              │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │             Common Infrastructure                    │   │
+│  │  • Guards (RolesGuard)                               │   │
+│  │  • Interceptors (Response, Logging)                  │   │
+│  │  • Filters (AllExceptionsFilter)                     │   │
+│  │  • Decorators (@CurrentUser, @Roles)                 │   │
+│  │  • Logger (CustomLogger)                             │   │
+│  │  • Background Jobs (OrderTimeoutJob)                 │   │
+│  └─────────────────────────────────────────────────────┘   │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         │ TypeORM + PostGIS
+                         │
+┌────────────────────────▼────────────────────────────────────┐
+│                    PostgreSQL 15 Database                    │
+│                  (with PostGIS Extension)                    │
+│                                                              │
+│  Tables:                                                     │
+│  ├─ users                                                    │
+│  ├─ categories                                               │
+│  ├─ products                                                 │
+│  ├─ pharmacies                                               │
+│  ├─ pharmacy_medicines                                       │
+│  ├─ pharmacy_reviews                                         │
+│  ├─ carts                                                    │
+│  ├─ cart_items                                               │
+│  ├─ orders                                                   │
+│  ├─ order_items                                              │
+│  ├─ emergency_orders                                         │
+│  ├─ emergency_order_responses                                │
+│  ├─ chats                                                    │
+│  ├─ chat_messages                                            │
+│  ├─ used_medicine                                            │
+│  ├─ used_medicine_item                                       │
+│  ├─ used_medicine_history                                    │
+│  └─ kafu_posts                                               │
+│                                                              │
+│  PostGIS Features:                                           │
+│  ├─ Spatial indexes (GIST) on pharmacies, emergency_orders  │
+│  ├─ Geometry columns (Point, SRID 4326)                     │
+│  └─ Distance calculations via ::geography                    │
+└──────────────────────────────────────────────────────────────┘
+
+                         │
+                         │ Cloudinary API
+                         │
+┌────────────────────────▼────────────────────────────────────┐
+│                      Cloudinary Storage                      │
+│                  (Image/File Hosting Service)                │
+└──────────────────────────────────────────────────────────────┘
+```
+
+## 2. Technology Stack
+
+### Backend Framework
+- **NestJS 11**: Progressive Node.js framework with dependency injection
+- **TypeScript 5.7**: Type-safe JavaScript superset
+- **Reflect Metadata**: Enables decorators metadata reflection
+
+### Database
+- **PostgreSQL 15**: Relational database with advanced features
+- **PostGIS**: Spatial database extender for geographic queries
+- **TypeORM 0.3**: Object-Relational Mapping with active record/data mapper patterns
+
+### Authentication & Security
+- **Passport.js**: Authentication middleware
+- **JWT (jsonwebtoken)**: Token-based authentication
+- **bcryptjs**: Password hashing (cost factor: 12)
+- **Helmet**: HTTP security headers
+- **Throttler**: Rate limiting (10 req/min global, stricter on auth)
+
+### Real-time Communication
+- **Socket.IO 4**: WebSocket library for bidirectional communication
+- **Platform**: @nestjs/platform-socket.io
+
+### File Storage
+- **Cloudinary 2.9**: Cloud-based image and video management
+- **Multer**: Multipart form data handling
+
+### Validation & Transformation
+- **class-validator 0.14**: Decorator-based validation
+- **class-transformer 0.5**: Object transformation and serialization
+
+### API Documentation
+- **Swagger/OpenAPI**: @nestjs/swagger for automatic API documentation
+- **swagger-ui-express**: UI for API exploration
+
+### Email Service
+- **Nodemailer 6.9**: Email sending via SMTP
+
+### Data Validation
+- **Joi 18**: Schema validation for environment variables
+
+### Utilities
+- **UUID v13**: Unique identifier generation
+- **slugify 1.6**: URL-friendly slug generation
+- **compression**: Response compression
+- **dotenv 17**: Environment variable management
+
+### Development Tools
+- **ESLint 9**: Code linting
+- **Prettier 3**: Code formatting
+- **Jest 30**: Unit and integration testing
+- **ts-jest**: TypeScript preprocessor for Jest
+- **supertest 7**: HTTP assertion library
+
+## 3. Project Structure
+
+```
+mid-aid-backend/
+├── src/
+│   ├── main.ts                           # Application entry point
+│   ├── app.module.ts                     # Root module
+│   ├── app.controller.ts                 # Root controller (health check)
+│   │
+│   ├── common/                           # Shared infrastructure
+│   │   ├── constants/
+│   │   │   └── order.constants.ts        # Order-related constants
+│   │   ├── decorators/
+│   │   │   └── current-user.decorator.ts # @CurrentUser decorator
+│   │   ├── filters/
+│   │   │   └── all-exceptions.filter.ts  # Global exception filter
+│   │   ├── guards/
+│   │   │   ├── roles.guard.ts            # Role-based authorization guard
+│   │   │   └── roles.decorator.ts        # @Roles decorator
+│   │   ├── interceptors/
+│   │   │   ├── response.interceptor.ts   # Unified response format
+│   │   │   └── logging.interceptor.ts    # Request/response logging
+│   │   ├── jobs/
+│   │   │   └── order-timeout.job.ts      # Background job for timeout
+│   │   └── logger/
+│   │       └── custom-logger.ts          # Custom logger wrapper
+│   │
+│   ├── modules/                          # Domain modules
+│   │   ├── auth/                         # Authentication & JWT
+│   │   │   ├── auth.controller.ts
+│   │   │   ├── auth.service.ts
+│   │   │   ├── jwt.strategy.ts
+│   │   │   └── auth.module.ts
+│   │   │
+│   │   ├── user/                         # User management
+│   │   │   ├── user.controller.ts
+│   │   │   ├── user.service.ts
+│   │   │   ├── user.entity.ts
+│   │   │   ├── dto/
+│   │   │   │   ├── create-user.dto.ts
+│   │   │   │   └── update-user.dto.ts
+│   │   │   └── user.module.ts
+│   │   │
+│   │   ├── category/                     # Product categories
+│   │   │   ├── category.controller.ts
+│   │   │   ├── category.service.ts
+│   │   │   ├── category.entity.ts
+│   │   │   ├── dto/
+│   │   │   └── category.module.ts
+│   │   │
+│   │   ├── product/                      # Product catalog
+│   │   │   ├── product.controller.ts
+│   │   │   ├── product.service.ts
+│   │   │   ├── product.entity.ts
+│   │   │   ├── dto/
+│   │   │   └── product.module.ts
+│   │   │
+│   │   ├── pharmacy/                     # Pharmacy management
+│   │   │   ├── pharmacy.controller.ts
+│   │   │   ├── pharmacy.service.ts
+│   │   │   ├── pharmacy.entity.ts
+│   │   │   ├── dto/
+│   │   │   └── pharmacy.module.ts
+│   │   │
+│   │   ├── cart/                         # Shopping cart
+│   │   │   ├── cart.controller.ts
+│   │   │   ├── cart.service.ts
+│   │   │   ├── cart.entity.ts
+│   │   │   ├── dto/
+│   │   │   └── cart.module.ts
+│   │   │
+│   │   ├── order/                        # Order management
+│   │   │   ├── controllers/
+│   │   │   │   └── order.controller.ts
+│   │   │   ├── services/
+│   │   │   │   └── order.service.ts
+│   │   │   ├── entities/
+│   │   │   │   └── order.entity.ts
+│   │   │   ├── dto/
+│   │   │   └── order.module.ts
+│   │   │
+│   │   ├── emergencyOrder/               # Emergency orders
+│   │   │   ├── controllers/
+│   │   │   ├── services/
+│   │   │   ├── entities/
+│   │   │   ├── dto/
+│   │   │   └── emergencyOrder.module.ts
+│   │   │
+│   │   ├── chat/                         # Real-time chat
+│   │   │   ├── chat.controller.ts
+│   │   │   ├── chat.service.ts
+│   │   │   ├── chat.gateway.ts           # WebSocket gateway
+│   │   │   ├── entities/
+│   │   │   └── chat.module.ts
+│   │   │
+│   │   ├── usedMedicine/                 # Medicine tracking
+│   │   │   ├── controllers/
+│   │   │   ├── services/
+│   │   │   ├── entities/
+│   │   │   ├── dto/
+│   │   │   └── usedMedicine.module.ts
+│   │   │
+│   │   ├── kafuPost/                     # Community help
+│   │   │   ├── controllers/
+│   │   │   ├── services/
+│   │   │   ├── entities/
+│   │   │   ├── dto/
+│   │   │   └── kafuPost.module.ts
+│   │   │
+│   │   ├── upload/                       # File upload
+│   │   │   ├── upload.controller.ts
+│   │   │   ├── upload.service.ts
+│   │   │   ├── cloudinary.provider.ts
+│   │   │   └── upload.module.ts
+│   │   │
+│   │   └── mail/                         # Email service
+│   │       ├── mail.service.ts
+│   │       └── mail.module.ts
+│   │
+│   ├── migrations/                       # Database migrations
+│   │   ├── 1760000000000-AddCartItemUniqueConstraint.ts
+│   │   └── 1760000000001-AddPostGISExtensionAndSpatialIndexes.ts
+│   │
+│   └── config/                           # Configuration
+│       └── database.config.ts            # TypeORM configuration
+│
+├── test/                                 # E2E tests
+├── scripts/                              # Utility scripts
+├── .env.example                          # Environment template
+├── docker-compose.yml                    # Docker orchestration
+├── Dockerfile                            # Container definition
+└── package.json                          # Dependencies & scripts
+```
+
+## 4. Module Dependency Graph
+
+```
+app.module.ts
+├── ConfigModule (environment validation)
+├── TypeORM (database connection)
+├── ThrottlerModule (rate limiting)
+│
+├── AuthModule
+│   ├── JwtModule
+│   ├── PassportModule
+│   └── UserModule
+│
+├── UserModule
+│   └── MailModule
+│
+├── MailModule (nodemailer)
+│
+├── CategoryModule
+│
+├── ProductModule
+│   └── UserModule (for createdBy relation)
+│
+├── PharmacyModule
+│   ├── UserModule
+│   ├── ProductModule
+│   └── PostGIS (spatial queries)
+│
+├── CartModule
+│   ├── UserModule
+│   ├── ProductModule
+│   └── PharmacyModule
+│
+├── OrderModule
+│   ├── CartModule
+│   ├── PharmacyModule
+│   ├── ProductModule
+│   └── UserModule
+│
+├── EmergencyOrderModule
+│   ├── PharmacyModule
+│   ├── ProductModule
+│   └── UserModule
+│
+├── ChatModule
+│   ├── OrderModule
+│   └── UserModule
+│
+├── UsedMedicineModule
+│   ├── UserModule
+│   └── ProductModule
+│
+├── KafuPostModule
+│   └── UserModule
+│
+├── UploadModule (Cloudinary)
+│
+└── OrderTimeoutJob (background job)
+```
+
+## 5. Architectural Patterns
+
+### Domain-Driven Design (DDD)
+- **Bounded Contexts**: Each module represents a distinct domain (Auth, User, Product, Order, etc.)
+- **Aggregates**: Related entities grouped together (Order + OrderItems, Cart + CartItems)
+- **Repositories**: Services act as repositories for domain objects
+
+### Layered Architecture
+```
+┌─────────────────────────────────────┐
+│         Presentation Layer          │  (Controllers, DTOs, Guards)
+├─────────────────────────────────────┤
+│          Business Layer             │  (Services, Business Logic)
+├─────────────────────────────────────┤
+│         Persistence Layer           │  (Entities, TypeORM Repositories)
+├─────────────────────────────────────┤
+│        Infrastructure Layer         │  (Database, External Services)
+└─────────────────────────────────────┘
+```
+
+### Dependency Injection
+- All services are injectable via NestJS DI container
+- Modules encapsulate providers and exports
+- Circular dependencies avoided through careful design
+
+## 6. Design Principles
+
+### SOLID Principles
+- **Single Responsibility**: Each service/controller has one reason to change
+- **Open/Closed**: Extensible via decorators and guards without modification
+- **Liskov Substitution**: DTOs and entities follow inheritance rules
+- **Interface Segregation**: Focused interfaces for different operations
+- **Dependency Inversion**: Depend on abstractions (services), not concretions
+
+### Security Best Practices
+- Password hashing with bcrypt (cost: 12)
+- JWT tokens with configurable expiration
+- Role-based access control at multiple levels
+- Input validation with class-validator
+- SQL injection prevention via TypeORM parameterization
+- XSS prevention with Helmet headers
+- Rate limiting to prevent abuse
+- Sensitive data redaction in logs
+
+### Performance Optimizations
+- Database indexing (foreign keys, spatial indexes)
+- Pessimistic locking for inventory management
+- Transactional operations for data consistency
+- PostGIS spatial indexes (GIST) for geo-queries
+- Response compression
+- Selective eager loading of relations
+
+## 7. Deployment Architecture
+
+```
+┌─────────────────────────────────────────────┐
+│            Docker Compose Stack              │
+│                                              │
+│  ┌────────────────────────────────────┐    │
+│  │  NestJS App Container              │    │
+│  │  - Node 20 Alpine                  │    │
+│  │  - Port: 3000                      │    │
+│  │  - Health checks                   │    │
+│  └────────┬───────────────────────────┘    │
+│           │                                 │
+│  ┌────────▼───────────────────────────┐    │
+│  │  PostgreSQL Container              │    │
+│  │  - PostGIS enabled                 │    │
+│  │  - Port: 5432                      │    │
+│  │  - Volume: postgres_data           │    │
+│  └────────────────────────────────────┘    │
+│                                              │
+│  ┌────────────────────────────────────┐    │
+│  │  Redis Container                   │    │
+│  │  - Reserved for future use         │    │
+│  │  - Port: 6379                      │    │
+│  └────────────────────────────────────┘    │
+│                                              │
+│  Network: mid-aid-network (bridge)          │
+└─────────────────────────────────────────────┘
+```
+
+## 8. Environment Configuration
+
+### Required Environment Variables
+```bash
+# Database
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=postgres
+DB_PASS=your_password
+DB_NAME=nest_db
+
+# Authentication
+JWT_SECRET=your_secret_key
+JWT_EXPIRES_IN=10d
+
+# Email
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your_email@gmail.com
+SMTP_PASS=your_app_password
+
+# File Storage
+CLOUDINARY_CLOUD_NAME=your_cloud_name
+CLOUDINARY_API_KEY=your_api_key
+CLOUDINARY_API_SECRET=your_api_secret
+```
+
+### Optional Environment Variables
+```bash
+# Database
+DATABASE_URL=postgresql://user:pass@host:port/db  # Overrides individual DB vars
+DB_SYNCHRONIZE=false                               # Auto-sync schema (dev only)
+DB_SSL=false                                       # Enable SSL for DB
+
+# Admin
+SECRET_KEY_ADMIN=your_secret_key                   # For admin bootstrap
+
+# Application
+NODE_ENV=development                               # development | production
+PORT=3000                                          # Server port
+
+# Password Reset
+PASSWORD_RESET_EXPIRES=3600000                     # 1 hour in milliseconds
+```
+
+## 9. Key Engineering Decisions
+
+### Why PostgreSQL + PostGIS?
+- Native spatial query support for location-based features
+- ACID compliance for financial transactions (orders)
+- Advanced indexing capabilities (GIST for spatial data)
+- Robust and battle-tested for production workloads
+
+### Why NestJS?
+- TypeScript-first framework
+- Dependency injection for testability
+- Modular architecture
+- Built-in support for microservices, GraphQL, WebSockets
+- Strong ecosystem and community
+
+### Why TypeORM?
+- Active Record and Data Mapper patterns
+- Migration support
+- Relationship management
+- Query builder for complex queries
+- TypeScript decorators for entity definition
+
+### Why JWT over Sessions?
+- Stateless authentication
+- Scalable across multiple servers
+- Better suited for mobile apps
+- No server-side session storage needed
+
+## 10. Scalability Considerations
+
+### Current Architecture
+- Monolithic application with modular design
+- Single database instance
+- In-memory background jobs (setInterval)
+
+### Future Scaling Options
+- **Horizontal Scaling**: Multiple app instances behind load balancer
+- **Database**: Read replicas for query distribution
+- **Caching**: Redis for session storage and query caching
+- **Message Queue**: RabbitMQ/Redis for background jobs
+- **Microservices**: Split modules into separate services if needed
+- **CDN**: Cloudinary already handles image delivery
+
+### Bottlenecks to Monitor
+- Database connection pool size
+- Number of concurrent WebSocket connections
+- Emergency order background job frequency
+- Large result sets from spatial queries
+
+## 11. Testing Strategy
+
+### Unit Tests
+- Service logic testing
+- DTO validation testing
+- Entity method testing
+
+### Integration Tests
+- Controller endpoint testing
+- Database operation testing
+- Guard and interceptor testing
+
+### E2E Tests
+- Full API flow testing
+- Authentication flow testing
+- Order lifecycle testing
+
+### Test Commands
+```bash
+pnpm run test           # Run unit tests
+pnpm run test:watch     # Watch mode
+pnpm run test:cov       # Coverage report
+pnpm run test:e2e       # E2E tests
+```
+
+## 12. Monitoring & Observability
+
+### Logging
+- Correlation ID per request for traceability
+- Request/response logging with sanitization
+- Error tracking with stack traces
+- Duration metrics for performance monitoring
+
+### Health Checks
+- `GET /` endpoint for basic health check
+- Database connection monitoring
+- Scheduled job status monitoring
+
+### Metrics to Track
+- API response times
+- Error rates by endpoint
+- Database query performance
+- WebSocket connection counts
+- Background job execution times
+
+## 13. Maintenance Guidelines
+
+### Regular Tasks
+- Monitor error logs for exceptions
+- Review and rotate old KafuPosts (expired)
+- Check emergency order timeout job effectiveness
+- Validate spatial index performance
+- Review and clean up old cart/order data
+
+### Database Maintenance
+- Regular backups (automated via Docker volumes)
+- Index performance monitoring
+- Query plan analysis for slow queries
+- Migration execution for schema changes
+
+### Security Maintenance
+- Rotate JWT_SECRET periodically
+- Update Cloudinary API keys
+- Review rate limiting effectiveness
+- Monitor for suspicious login attempts
+- Keep dependencies updated

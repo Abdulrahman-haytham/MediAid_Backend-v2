@@ -1,4 +1,4 @@
-import { PartialType } from '@nestjs/mapped-types';
+import { PartialType, OmitType } from '@nestjs/mapped-types';
 import {
   IsOptional,
   IsString,
@@ -16,7 +16,10 @@ class UpdateLocationCoordinatesDto {
   coordinates: number[];
 }
 
-export class UpdateUserDto extends PartialType(CreateUserDto) {
+// Omit 'type' to prevent role escalation, and other sensitive fields
+export class UpdateUserDto extends OmitType(PartialType(CreateUserDto), [
+  'type',
+] as const) {
   @IsOptional()
   @IsString()
   @MinLength(6)
