@@ -93,6 +93,23 @@ For containerized setup, see:
 - `Dockerfile`
 - `docker-compose.yml`
 
+## Railway Deployment
+
+For Railway, set these environment variables at minimum:
+- `DATABASE_URL`
+- `DB_SSL=true`
+- `JWT_SECRET`
+
+Optional integrations:
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` for email flows
+- `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` for uploads
+
+Production behavior:
+- The app listens on Railway's injected `PORT`.
+- `/health` is available for health checks.
+- On the first production start, the app bootstraps the current schema if the database is empty, then records the existing migrations as a baseline.
+- On later starts, only pending migrations are applied.
+
 ## Engineering Notes
 
 - Cart items enforce uniqueness per `(cart, product, pharmacy)`.

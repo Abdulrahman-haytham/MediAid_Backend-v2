@@ -1,4 +1,8 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { v2 as cloudinary } from 'cloudinary';
 import { Readable } from 'stream';
 
@@ -9,6 +13,16 @@ export class UploadService {
   ): Promise<{ url: string; cloudinary_id: string }> {
     if (!file) {
       throw new BadRequestException('No file uploaded');
+    }
+
+    if (
+      !process.env.CLOUDINARY_CLOUD_NAME ||
+      !process.env.CLOUDINARY_API_KEY ||
+      !process.env.CLOUDINARY_API_SECRET
+    ) {
+      throw new ServiceUnavailableException(
+        'Cloudinary is not configured. Set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET.',
+      );
     }
 
     return new Promise((resolve, reject) => {

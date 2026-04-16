@@ -14,6 +14,8 @@ async function bootstrap() {
     logger: appLogger,
   });
 
+  app.enableShutdownHooks();
+  app.getHttpAdapter().getInstance().set('trust proxy', 1);
   app.use(helmet());
   app.use(compression());
 
@@ -50,7 +52,7 @@ async function bootstrap() {
   );
 
   // تحديد المنفذ والمضيف
-  const port = process.env.PORT || 3000;
+  const port = Number(process.env.PORT) || 3000;
   const host = process.env.HOST || '0.0.0.0';
   
   try {

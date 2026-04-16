@@ -1,0 +1,13 @@
+node_modules
+dist
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+coverage
+server.out.log
+server.err.log
+npm-debug.log*
+pnpm-debug.log*
+.pnpm-store

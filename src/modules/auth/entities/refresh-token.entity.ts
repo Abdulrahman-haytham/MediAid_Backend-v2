@@ -5,9 +5,12 @@ import {
   CreateDateColumn,
   ManyToOne,
   JoinColumn,
+  Index,
 } from 'typeorm';
 import { User } from '../../user/user.entity';
 
+@Index('idx_refresh_tokens_token', ['token'])
+@Index('idx_refresh_tokens_user', ['userId'])
 @Entity('refresh_tokens')
 export class RefreshToken {
   @PrimaryGeneratedColumn('uuid')

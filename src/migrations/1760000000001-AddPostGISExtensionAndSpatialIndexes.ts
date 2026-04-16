@@ -2,6 +2,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
 
 export class AddPostGISExtensionAndSpatialIndexes1760000000001 implements MigrationInterface {
   name = 'AddPostGISExtensionAndSpatialIndexes1760000000001';
+  transaction = false;
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     // Enable PostGIS extension — required for all spatial functions

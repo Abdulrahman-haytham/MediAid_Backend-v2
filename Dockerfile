@@ -1,24 +1,33 @@
-FROM node:20-alpine
+FROM node:20-alpine AS deps
 
 WORKDIR /app
 
-# Install pnpm
 RUN npm install -g pnpm
-
-# Copy package files
 COPY package.json pnpm-lock.yaml ./
-
-# Install dependencies
 RUN pnpm install --frozen-lockfile
 
-# Copy source code
-COPY . .
+FROM node:20-alpine AS builder
 
-# Build the application
+WORKDIR /app
+
+RUN npm install -g pnpm
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
 RUN pnpm run build
 
-# Expose port
+FROM node:20-alpine AS runner
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+
+RUN npm install -g pnpm
+
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --prod --frozen-lockfile
+COPY --from=builder /app/dist ./dist
+
 EXPOSE 3000
 
-# Start the application
 CMD ["pnpm", "run", "start:prod"]

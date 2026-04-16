@@ -1,31 +1,44 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
 
 @Injectable()
 export class MailService {
   private readonly logger = new Logger(MailService.name);
-  private transporter: nodemailer.Transporter;
+  private transporter: nodemailer.Transporter | null = null;
 
   constructor(private configService: ConfigService) {
+    const host = this.configService.get<string>('SMTP_HOST');
+    const port = this.configService.get<number>('SMTP_PORT');
+    const user = this.configService.get<string>('SMTP_USER');
+    const pass = this.configService.get<string>('SMTP_PASS');
+
+    if (!host || !port || !user || !pass) {
+      this.logger.warn(
+        'SMTP is not fully configured. Email features will stay disabled until SMTP_HOST, SMTP_PORT, SMTP_USER and SMTP_PASS are set.',
+      );
+      return;
+    }
+
     this.transporter = nodemailer.createTransport({
-      host: this.configService.get<string>('SMTP_HOST'),
-      port: this.configService.get<number>('SMTP_PORT'),
+      host,
+      port,
       secure: false, // true for 465, false for other ports
       auth: {
-        user: this.configService.get<string>('SMTP_USER'),
-        pass: this.configService.get<string>('SMTP_PASS'),
+        user,
+        pass,
       },
     });
   }
 
   async sendVerificationEmail(email: string, code: string) {
+    const transporter = this.ensureTransporter();
     let retries = 2;
     let lastError: Error | null = null;
 
     while (retries >= 0) {
       try {
-        await this.transporter.sendMail({
+        await transporter.sendMail({
           from: `"MediAid Support" <${this.configService.get<string>('SMTP_USER')}>`,
           to: email,
           subject: 'MediAid Email Verification',
@@ -64,12 +77,13 @@ export class MailService {
   }
 
   async sendPasswordResetEmail(email: string, token: string) {
+    const transporter = this.ensureTransporter();
     let retries = 2;
     let lastError: Error | null = null;
 
     while (retries >= 0) {
       try {
-        await this.transporter.sendMail({
+        await transporter.sendMail({
           from: `"MediAid Support" <${this.configService.get<string>('SMTP_USER')}>`,
           to: email,
           subject: 'MediAid Password Reset Request',
@@ -108,5 +122,15 @@ export class MailService {
       lastError?.stack,
     );
     throw new Error(`Failed to send password reset email: ${lastError?.message}`);
+  }
+
+  private ensureTransporter(): nodemailer.Transporter {
+    if (!this.transporter) {
+      throw new ServiceUnavailableException(
+        'SMTP mail service is not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USER, and SMTP_PASS.',
+      );
+    }
+
+    return this.transporter;
   }
 }

@@ -33,11 +33,14 @@ const AppDataSource = new DataSource({
     process.env.DB_SSL === 'true' || process.env.NODE_ENV === 'production'
       ? { rejectUnauthorized: false }
       : undefined,
+  uuidExtension: 'uuid-ossp',
+  installExtensions: true,
 
   // Paths for compiled .js files (after `pnpm run build`)
   // When running from source (dev), ts-node handles resolution automatically.
   entities: [join(__dirname, '**', '*.entity.js')],
   migrations: [join(__dirname, 'migrations', '*.js')],
+  migrationsTransactionMode: 'each',
   migrationsRun: false,
 
   logging: process.env.DB_LOGGING === 'true',
