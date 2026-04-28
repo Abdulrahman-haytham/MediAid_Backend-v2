@@ -38,11 +38,11 @@ export class CreateOrderReviewsTable1760000000006 implements MigrationInterface 
     `);
 
     await queryRunner.query(`
-      CREATE INDEX "idx_order_review_order" ON "order_reviews" ("orderId")
+      CREATE INDEX IF NOT EXISTS "idx_order_review_order" ON "order_reviews" ("orderId")
     `);
 
     await queryRunner.query(`
-      CREATE INDEX "idx_order_review_pharmacy" ON "order_reviews" ("pharmacyId")
+      CREATE INDEX IF NOT EXISTS "idx_order_review_pharmacy" ON "order_reviews" ("pharmacyId")
     `);
   }
 

@@ -24,11 +24,11 @@ export class CreateRefreshTokensTable1760000000003 implements MigrationInterface
     `);
 
     await queryRunner.query(`
-      CREATE INDEX "idx_refresh_tokens_user" ON "refresh_tokens" ("userId")
+      CREATE INDEX IF NOT EXISTS "idx_refresh_tokens_user" ON "refresh_tokens" ("userId")
     `);
 
     await queryRunner.query(`
-      CREATE INDEX "idx_refresh_tokens_token" ON "refresh_tokens" ("token")
+      CREATE INDEX IF NOT EXISTS "idx_refresh_tokens_token" ON "refresh_tokens" ("token")
     `);
   }
 
