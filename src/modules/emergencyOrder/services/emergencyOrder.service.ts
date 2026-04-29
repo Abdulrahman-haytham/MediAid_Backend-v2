@@ -99,42 +99,39 @@ export class EmergencyOrderService {
     // ST_DWithin uses the GIST spatial index for efficient filtering.
     const scoredResults = await this.pharmacyRepo.query(
       `
-      SELECT
-        p.id AS "pharmacyId",
-        p.name AS "pharmacyName",
-        p."averageRating" AS rating,
-        ST_Distance(
-          p.location::geography,
-          ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography
-        ) AS distance_meters,
-        GREATEST(0, 50 - (
+      WITH candidates AS (
+        SELECT
+          p.id AS "pharmacyId",
+          p.name AS "pharmacyName",
+          p."averageRating" AS rating,
           ST_Distance(
             p.location::geography,
             ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography
-          ) / $3 * 50
-        ))
-        + (COALESCE(p."averageRating", 0) / 5.0 * 30)
-        + (
-          CASE WHEN EXISTS (
+          ) AS distance_meters,
+          EXISTS (
             SELECT 1 FROM pharmacy_medicines pm
             WHERE pm."pharmacyId" = p.id
               AND pm."productId" = $4
               AND pm.quantity > 0
-          ) THEN 20 ELSE 0 END
-        ) AS total_score,
-        EXISTS (
-          SELECT 1 FROM pharmacy_medicines pm
-          WHERE pm."pharmacyId" = p.id
-            AND pm."productId" = $4
-            AND pm.quantity > 0
-        ) AS "hasProduct"
-      FROM pharmacies p
-      WHERE p."isActive" = true
-        AND ST_DWithin(
-          p.location::geography,
-          ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography,
-          $3
-        )
+          ) AS "hasProduct"
+        FROM pharmacies p
+        WHERE p."isActive" = true
+          AND ST_DWithin(
+            p.location::geography,
+            ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography,
+            $3
+          )
+      )
+      SELECT
+        "pharmacyId",
+        "pharmacyName",
+        rating,
+        distance_meters,
+        GREATEST(0, 50 - (distance_meters / $3 * 50))
+          + (COALESCE(rating, 0) / 5.0 * 30)
+          + (CASE WHEN "hasProduct" THEN 20 ELSE 0 END) AS total_score,
+        "hasProduct"
+      FROM candidates
       ORDER BY total_score DESC
       LIMIT 5
       `,

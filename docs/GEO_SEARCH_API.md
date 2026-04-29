@@ -234,7 +234,7 @@ WHERE ST_DWithin(
 ### نصائح تحسين الأداء
 
 1. **استخدم `::geography` دائماً** لحساب المسافات — الدقة بالأمتار ضرورية للتطبيقات الطبية.
-2. **الفهرس GIST** يُستخدم تلقائياً مع `ST_DWithin` ولكن ليس مع `ST_Distance` في `ORDER BY` — لذا نستخدم `ST_DWithin` للفلترة أولاً.
+2. **الفهرس GIST** يُستخدم تلقائياً مع `ST_DWithin` للفلترة، ويمكن الاستفادة منه أيضاً في الترتيب باستخدام عامل KNN (`<->`) على `geometry` عند الحاجة.
 3. **لا تستخدم `synchronize: true`** في الإنتاج — استخدم Migrations دائماً.
 4. جميع المعاملات مُمرّرة عبر **parameterized queries** (`$1, $2, ...`) — لا يوجد حقن SQL.
 
@@ -248,7 +248,7 @@ WHERE ST_DWithin(
 |-------|-----------|
 | `lon` | `@IsNumber()`, `@Min(-180)`, `@Max(180)`, `@Type(() => Number)` |
 | `lat` | `@IsNumber()`, `@Min(-90)`, `@Max(90)`, `@Type(() => Number)` |
-| `radius` | `@IsOptional()`, `@IsNumber()`, `@Min(100)`, `@Max(100000)` |
+| `radius` | `@IsOptional()`, `@IsNumber()`, `@Min(100)`, `@Max(1000000)` |
 
 ---
 

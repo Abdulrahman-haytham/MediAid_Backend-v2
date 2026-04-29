@@ -19,9 +19,12 @@ services:
       - SMTP_PORT=${SMTP_PORT}
       - SMTP_USER=${SMTP_USER}
       - SMTP_PASS=${SMTP_PASS}
+      - AI_BOT_RMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - AI_BOT_RMQ_QUEUE=bot.rpc
     depends_on:
       - postgres
       - redis
+      - rabbitmq
     networks:
       - mid-aid-network
 
@@ -42,6 +45,14 @@ services:
     image: redis:alpine
     ports:
       - "6379:6379"
+    networks:
+      - mid-aid-network
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    ports:
+      - "5672:5672"
+      - "15672:15672"
     networks:
       - mid-aid-network
 

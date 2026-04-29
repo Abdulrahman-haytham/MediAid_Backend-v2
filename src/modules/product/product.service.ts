@@ -252,14 +252,14 @@ export class ProductService {
    * @param productName Product name (partial, case-insensitive)
    * @param lon User longitude
    * @param lat User latitude
-   * @param radiusMeters Search radius in meters (default: 500km)
+   * @param radiusMeters Search radius in meters (default: 50km)
    * @returns Main product with pharmacies + alternatives from same sub_category
    */
   async searchProductsByLocation(
     productName: string,
     lon: number,
     lat: number,
-    radiusMeters = 500000,
+    radiusMeters = 50000,
   ): Promise<SearchProductsByLocationResponse> {
     // 1. Find the main product (best match by name)
     const mainProduct = await this.productRepo.findOne({
@@ -269,13 +269,38 @@ export class ProductService {
 
     let mainResult: ProductWithPharmaciesResult | null = null;
 
-    if (mainProduct) {
-      const pharmacies = await this._findPharmaciesWithProduct(
-        mainProduct.id,
-        lon,
-        lat,
-        radiusMeters,
+    // 2. Find alternative products from the same sub_category
+    const alternatives: ProductWithPharmaciesResult[] = [];
+    const altProducts: Product[] = [];
+
+    if (mainProduct?.sub_category) {
+      altProducts.push(
+        ...(await this.productRepo.find({
+        where: {
+          sub_category: mainProduct.sub_category,
+        },
+        // Exclude the main product itself
+        // (we filter in JS since ILike doesn't support != easily)
+        order: { createdAt: 'DESC' },
+        take: 10,
+        })),
       );
+    }
+
+    const productsToCheck: Product[] = [
+      ...(mainProduct ? [mainProduct] : []),
+      ...altProducts.filter((p) => p.id !== mainProduct?.id),
+    ];
+
+    const availabilityByProductId = await this._findPharmaciesWithProducts(
+      productsToCheck.map((p) => p.id),
+      lon,
+      lat,
+      radiusMeters,
+    );
+
+    if (mainProduct) {
+      const pharmacies = availabilityByProductId[mainProduct.id] ?? [];
       mainResult = {
         product: {
           id: mainProduct.id,
@@ -292,49 +317,32 @@ export class ProductService {
       };
     }
 
-    // 2. Find alternative products from the same sub_category
-    const alternatives: ProductWithPharmaciesResult[] = [];
+    for (const alt of altProducts) {
+      if (alt.id === mainProduct?.id) continue;
+      const pharmacies = availabilityByProductId[alt.id] ?? [];
+      if (pharmacies.length === 0) continue;
 
-    if (mainProduct?.sub_category) {
-      const altProducts = await this.productRepo.find({
-        where: {
-          sub_category: mainProduct.sub_category,
+      alternatives.push({
+        product: {
+          id: alt.id,
+          name: alt.name,
+          slug: alt.slug,
+          sub_category: alt.sub_category ?? null,
+          brand: alt.brand ?? null,
+          description: alt.description,
+          manufacturer: alt.manufacturer ?? null,
+          imageUrl: alt.imageUrl,
+          basePrice: alt.price,
         },
-        // Exclude the main product itself
-        // (we filter in JS since ILike doesn't support != easily)
-        order: { createdAt: 'DESC' },
-        take: 10,
+        pharmacies,
       });
-
-      for (const alt of altProducts) {
-        if (alt.id === mainProduct.id) continue;
-
-        const altPharmacies = await this._findPharmaciesWithProduct(
-          alt.id,
-          lon,
-          lat,
-          radiusMeters,
-        );
-
-        // Only include alternatives that have at least one pharmacy nearby
-        if (altPharmacies.length > 0) {
-          alternatives.push({
-            product: {
-              id: alt.id,
-              name: alt.name,
-              slug: alt.slug,
-              sub_category: alt.sub_category ?? null,
-              brand: alt.brand ?? null,
-              description: alt.description,
-              manufacturer: alt.manufacturer ?? null,
-              imageUrl: alt.imageUrl,
-              basePrice: alt.price,
-            },
-            pharmacies: altPharmacies,
-          });
-        }
-      }
     }
+
+    alternatives.sort((a, b) => {
+      const aMin = a.pharmacies[0]?.distance_meters ?? Number.POSITIVE_INFINITY;
+      const bMin = b.pharmacies[0]?.distance_meters ?? Number.POSITIVE_INFINITY;
+      return aMin - bMin;
+    });
 
     return {
       mainProduct: mainResult,
@@ -343,21 +351,18 @@ export class ProductService {
     };
   }
 
-  /**
-   * Internal helper: find nearby active pharmacies that have a given product in stock.
-   * Uses PostGIS ST_DWithin for filtering and ST_Distance for distance calculation.
-   */
-  private async _findPharmaciesWithProduct(
-    productId: string,
+  private async _findPharmaciesWithProducts(
+    productIds: string[],
     lon: number,
     lat: number,
     radiusMeters: number,
-  ): Promise<PharmacyAvailabilityResult[]> {
-    // Raw SQL query that joins pharmacies with pharmacy_medicines
-    // and filters by distance using PostGIS ::geography for accuracy.
+  ): Promise<Record<string, PharmacyAvailabilityResult[]>> {
+    if (!productIds || productIds.length === 0) return {};
+
     const results = await this.pharmacyRepo.query(
       `
       SELECT
+        pm."productId" AS "productId",
         p.id AS "pharmacyId",
         p.name AS "pharmacyName",
         p.address AS "pharmacyAddress",
@@ -374,32 +379,60 @@ export class ProductService {
       FROM pharmacies p
       INNER JOIN pharmacy_medicines pm ON pm."pharmacyId" = p.id
       WHERE p."isActive" = true
-        AND pm."productId" = $3
+        AND pm."productId" = ANY($3::uuid[])
         AND pm.quantity > 0
         AND ST_DWithin(
           p.location::geography,
           ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography,
           $4
         )
-      ORDER BY distance_meters ASC
+      ORDER BY pm."productId" ASC, distance_meters ASC
       `,
-      [lon, lat, productId, radiusMeters],
+      [lon, lat, productIds, radiusMeters],
     );
 
-    return results.map((row: any) => ({
-      pharmacyId: row.pharmacyId,
-      pharmacyName: row.pharmacyName,
-      pharmacyAddress: row.pharmacyAddress,
-      phone: row.phone,
-      averageRating: parseFloat(row.averageRating) || 0,
-      imageUrl: row.imageurl || row.imageUrl || '',
-      location:
-        typeof row.location === 'string'
-          ? JSON.parse(row.location)
-          : row.location,
-      distance_meters: Math.round(parseFloat(row.distance_meters)),
-      stockPrice: parseFloat(row.stockPrice),
-      stockQuantity: parseInt(row.stockQuantity, 10),
-    }));
+    const grouped: Record<string, PharmacyAvailabilityResult[]> = {};
+
+    for (const row of results as any[]) {
+      const productId = row.productId as string;
+      const item: PharmacyAvailabilityResult = {
+        pharmacyId: row.pharmacyId,
+        pharmacyName: row.pharmacyName,
+        pharmacyAddress: row.pharmacyAddress,
+        phone: row.phone,
+        averageRating: parseFloat(row.averageRating) || 0,
+        imageUrl: row.imageurl || row.imageUrl || '',
+        location:
+          typeof row.location === 'string'
+            ? JSON.parse(row.location)
+            : row.location,
+        distance_meters: Math.round(parseFloat(row.distance_meters)),
+        stockPrice: parseFloat(row.stockPrice),
+        stockQuantity: parseInt(row.stockQuantity, 10),
+      };
+
+      (grouped[productId] ||= []).push(item);
+    }
+
+    return grouped;
+  }
+
+  /**
+   * Internal helper: find nearby active pharmacies that have a given product in stock.
+   * Uses PostGIS ST_DWithin for filtering and ST_Distance for distance calculation.
+   */
+  private async _findPharmaciesWithProduct(
+    productId: string,
+    lon: number,
+    lat: number,
+    radiusMeters: number,
+  ): Promise<PharmacyAvailabilityResult[]> {
+    const grouped = await this._findPharmaciesWithProducts(
+      [productId],
+      lon,
+      lat,
+      radiusMeters,
+    );
+    return grouped[productId] ?? [];
   }
 }

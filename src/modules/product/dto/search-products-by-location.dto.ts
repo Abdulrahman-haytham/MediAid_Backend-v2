@@ -33,9 +33,9 @@ export class SearchProductsByLocationDto {
   lat: number;
 
   @ApiProperty({
-    example: 500000,
+    example: 50000,
     description:
-      'Search radius in meters. Default: 500000 (500km). Max: 1000000.',
+      'Search radius in meters. Default: 50000 (50km). Max: 1000000.',
     required: false,
   })
   @Type(() => Number)
