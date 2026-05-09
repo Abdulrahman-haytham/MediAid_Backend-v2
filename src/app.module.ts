@@ -21,6 +21,7 @@ import { KafuPostModule } from './modules/kafuPost/kafuPost.module';
 import { UploadModule } from './modules/upload/upload.module';
 import { EmergencyOrderModule } from './modules/emergencyOrder/emergencyOrder.module';
 import { ChatModule } from './modules/chat/chat.module';
+import { AiBotModule } from './modules/aiBot/aiBot.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 
@@ -53,6 +54,10 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
         DB_BOOTSTRAP_SCHEMA: Joi.boolean().default(true),
         // synchronize يجب أن يبقى false في production حتى لا يحدث drift.
         DB_SYNCHRONIZE: Joi.boolean().default(false),
+        AI_BOT_RMQ_URL: Joi.string().optional(),
+        AI_BOT_RMQ_QUEUE: Joi.string().optional(),
+        AI_BOT_TIMEOUT_MS: Joi.number().optional(),
+        AI_BOT_REBUILD_TIMEOUT_MS: Joi.number().optional(),
       }),
     }),
     ThrottlerModule.forRoot([
@@ -122,6 +127,7 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
     UploadModule,
     EmergencyOrderModule,
     ChatModule,
+    AiBotModule,
     TerminusModule,
   ],
   controllers: [AppController],

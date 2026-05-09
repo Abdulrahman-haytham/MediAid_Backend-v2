@@ -452,7 +452,11 @@ export class PharmacyService {
         { lon, lat, radius: maxDistance },
       )
       .andWhere('p."isActive" = :isActive', { isActive: true })
-      .orderBy('distance_meters', 'ASC')
+      .orderBy(
+        'p.location <-> ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)',
+        'ASC',
+      )
+      .addOrderBy('distance_meters', 'ASC')
       .getRawMany();
 
     return rawResults.map((row) => ({

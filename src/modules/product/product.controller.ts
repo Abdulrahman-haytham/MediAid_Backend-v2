@@ -124,7 +124,7 @@ export class ProductController {
       'Searches for a product by name within a geographic radius, ' +
       'finds which nearby pharmacies have it in stock, and returns ' +
       'alternative products from the same sub_category. ' +
-      'Uses PostGIS for accurate distance calculations. Default radius: 500km.',
+      'Uses PostGIS for accurate distance calculations. Default radius: 50km.',
   })
   @ApiQuery({
     name: 'productName',
@@ -151,8 +151,8 @@ export class ProductController {
     name: 'radius',
     type: Number,
     required: false,
-    description: 'Search radius in meters (default: 500000 = 500km)',
-    example: 500000,
+    description: 'Search radius in meters (default: 50000 = 50km)',
+    example: 50000,
   })
   @ApiResponse({
     status: 200,
@@ -164,13 +164,13 @@ export class ProductController {
       query.productName,
       query.lon,
       query.lat,
-      query.radius ?? 500000,
+      query.radius ?? 50000,
     );
 
     if (!result.mainProduct && result.alternatives.length === 0) {
       return {
         success: false,
-        message: `No pharmacies found with "${query.productName}" within ${query.radius ?? 500000}m`,
+        message: `No pharmacies found with "${query.productName}" within ${query.radius ?? 50000}m`,
         mainProduct: null,
         alternatives: [],
         totalResults: 0,
